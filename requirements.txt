@@ -1,0 +1,4 @@
+openai>=1.50
+psycopg[binary]>=3.2
+requests>=2.32
+python-dotenv>=1.0
