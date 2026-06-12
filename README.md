@@ -1,5 +1,7 @@
 # PubMed RAG starter demo
 
+DISCLAIMER: this was completely vibe coded by fable, none of it is my own work
+
 A minimal, end-to-end Retrieval-Augmented Generation (RAG) pipeline matching the
 stack from the meeting notes: **PubMed articles → OpenAI embeddings → Postgres +
 pgvector → grounded Q&A with PMID citations**. Built as a hands-on learning
