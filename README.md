@@ -72,6 +72,67 @@ calling the chat model, which is itself instructive.
 | `search.py` | Cosine ANN (`<=>`), Postgres full-text as the sparse arm, and Reciprocal Rank Fusion for hybrid search |
 | `ask.py` | The grounding/citation/abstention/human-review prompt pattern for clinical RAG |
 
+## Technical details
+
+Concrete specs for anyone evaluating this as a reference implementation. Every
+number below is measured from a live run, not estimated.
+
+### Stack
+
+| Layer | Choice | Version (as run) |
+|---|---|---|
+| Language | Python — no orchestration framework (no LangChain/LlamaIndex) | 3.14 |
+| Vector store | PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) | 17.10 / 0.8.2 |
+| DB driver | psycopg (v3, binary) — no ORM, raw parameterized SQL | 3.3 |
+| Embeddings | OpenAI `text-embedding-3-small` (1536-dim) + offline `hashbow` fallback | openai 2.41 |
+| Chat | OpenAI `gpt-4o-mini` (configurable) | — |
+| Fetch | NCBI E-utilities over `requests` | 2.34 |
+
+The whole pipeline is **~600 lines across 9 modules** (`fetch` 112, `cli` 111,
+`db`/`search` 109 each, `embed` 67, `ask` 51, `config` 40). It is meant to be
+read end-to-end, not depended on.
+
+### Corpus (as loaded in `example_output.txt`)
+
+- **47 articles** retrieved from 50 PMIDs for *"metformin chronic kidney
+  disease"* — 3 were dropped for having no abstract (book records / ahead-of-print).
+- Spanning **2008–2026** across **39 distinct journals**.
+- Abstracts average **~1,690 characters (~420 tokens)**, max 5,333 — comfortably
+  under both the 8,192-token per-input cap and the per-request token ceiling.
+- On disk: **~2.1 MB** total (table 1.1 MB, GIN index 552 kB, HNSW index 416 kB).
+
+### Retrieval internals
+
+- **Distance:** cosine (`<=>`); score reported as `1 - distance`. OpenAI vectors
+  are unit-normalized, so cosine and inner product rank identically.
+- **Dense index:** HNSW with pgvector defaults (`m=16`, `ef_construction=64`).
+  `hnsw.ef_search` is raised **per query, transaction-locally** to the requested
+  depth — pgvector otherwise caps an index scan at 40 rows and silently truncates
+  deeper `k`.
+- **Sparse arm:** a `STORED GENERATED` `tsvector` column (`english` config) with a
+  GIN index, queried via `websearch_to_tsquery` (so quoted phrases and `-`
+  exclusions work like a search box).
+- **Hybrid = Reciprocal Rank Fusion:** each arm contributes `1/(60 + rank)` over
+  its top **50 candidates**; the fused sums are re-sorted. RRF needs no score
+  calibration between the two arms, which is its whole appeal.
+- **Latency:** ~15–18 ms/query at this corpus size — but that's connection +
+  Python overhead, not the index. At 47 rows Postgres seq-scans anyway; HNSW only
+  earns its keep in the thousands-to-millions range. Worth saying out loud in a
+  demo so nobody over-reads a small-N number.
+
+### Two correctness guards worth demoing
+
+Both are the classic RAG foot-guns, enforced in code rather than left to discipline:
+
+1. **Embedding-space guard.** Every row stores a signature
+   (`openai:text-embedding-3-small:1536` or `hashbow:1536`); search *refuses* to
+   run if the live config doesn't match what's stored. Comparing vectors from two
+   models silently returns garbage — this turns that into a hard error.
+2. **Dimension guard.** The `vector(N)` width is baked into the schema at table
+   creation, so a later `EMBED_DIM` change can't be fixed by re-loading. `load`
+   checks this **before** its destructive `--fresh` truncate, so a misconfigured
+   re-embed fails fast instead of wiping the corpus and burning API spend first.
+
 ## Key considerations (carried over from the design discussion)
 
 - **Vectors are married to their model.** Every row stores an embedding
