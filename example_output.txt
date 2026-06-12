@@ -1,4 +1,6 @@
 STEP 1: LOAD
+$ python -m pubmed_rag load --query "metformin chronic kidney disease" --max 50
+
 Embedding provider: hashbow:1536
   note: offline stand-in embeddings (set OPENAI_API_KEY for the real thing)
 PubMed: 50 PMIDs for 'metformin chronic kidney disease'
@@ -6,83 +8,97 @@ PubMed: 50 PMIDs for 'metformin chronic kidney disease'
 Upserted 47 articles.
 
 ---
-STEP 2a: HYBRID SEARCH — search "is metformin safe in renal impairment" --mode hybrid
- 1. [0.0325] PMID 31187887 (2019) Metformnd safety in chronic kidney disease.
- 2. [0.0318] PMID 21325870 (2011) Metformin: the safest hypoglycaemic agent in chronic kidney disease?           
- 3. [0.0317] PMID 32364526 (2020) Metformoperty in kidney disease.
- 4. [0.0306] PMID 30061044 (2019) Safe Use of Metformin in Adults With Type 2 Diabetes and Chronic Kidney       
- Disease: Lower Dosages and Sick-Day Educa
+
+STEP 2a: HYBRID SEARCH
+$ python -m pubmed_rag search "is metformin safe in renal impairment" --mode hybrid
+
+ 1. [0.0325] PMID 31187887 (2019) Metformin: time to review its role and safety in chronic kidney disease.
+ 2. [0.0318] PMID 21325870 (2011) Metformin: the safest hypoglycaemic agent in chronic kidney disease?
+ 3. [0.0317] PMID 32364526 (2020) Metformin: the updated protective property in kidney disease.
+ 4. [0.0306] PMID 30061044 (2019) Safe Use of Metformin in Adults With Type 2 Diabetes and Chronic Kidney Disease: Lower Dosages and Sick-Day Education Are Essential.
  5. [0.0164] PMID 27690331 (2017) Could metformin be used in patients with diabetes and advanced chronic kidney disease?
-                                                                                                               ---
-STEP 2b: KEYWORD SEARCH — search "eGFR threshold metformin" --mode keyword                                     No results -- is the corpus loaded? (pyth ...)
-                                                                                                               ---
-STEP 2c: SAME QUERY, HYBRID — search "eGFR threshold metformin" --mode hybrid                                   1. [0.0164] PMID 24711640 (2014) Metform time for a rethink.
- 2. [0.0161] PMID 32097995 (2020) Metformin Treatment for Patients with Diabetes and Chronic Kidney Disease: A Korean Diabetes Association and Korean So Statement.
+
+---
+
+STEP 2b: KEYWORD SEARCH (0 hits -- "threshold" appears in no abstract)
+$ python -m pubmed_rag search "eGFR threshold metformin" --mode keyword
+
+No results -- is the corpus loaded? (python -m pubmed_rag load --query ...)
+
+---
+
+STEP 2c: SAME QUERY, HYBRID (vector arm rescues it)
+$ python -m pubmed_rag search "eGFR threshold metformin" --mode hybrid
+
+ 1. [0.0164] PMID 24711640 (2014) Metformin in chronic kidney disease: time for a rethink.
+ 2. [0.0161] PMID 32097995 (2020) Metformin Treatment for Patients with Diabetes and Chronic Kidney Disease: A Korean Diabetes Association and Korean Society of Nephrology Consensus Statement.
  3. [0.0159] PMID 31187887 (2019) Metformin: time to review its role and safety in chronic kidney disease.
- 4. [0.0156] PMID 32545901 (2020) Signifibetic Kidney Disease.
+ 4. [0.0156] PMID 32545901 (2020) Significance of Metformin Use in Diabetic Kidney Disease.
  5. [0.0154] PMID 32364526 (2020) Metformin: the updated protective property in kidney disease.
 
 ---
-STEP 3: ASK — ask "is metformin safe in m
+
+STEP 3: GROUNDED Q&A
+$ python -m pubmed_rag ask "is metformin safe in moderate CKD?"
+
 [no OPENAI_API_KEY set -- showing the grounded prompt that would be sent]
 
 SYSTEM:
-You are a literature assistant for cliniconcept demo.
+You are a literature assistant for clinicians, running in a proof-of-concept demo.
 Answer ONLY from the PubMed abstracts provided in the user message.
-Cite the PMID in square brackets, e.g. [Paim.
+Cite the PMID in square brackets, e.g. [PMID 12345678], after every claim.
 If the abstracts do not contain enough information to answer, say exactly that;
-do not speculate and do not use outside k
+do not speculate and do not use outside knowledge.
 End every answer with: "Draft for clinician review -- verify against primary sources."
 
 USER:
 Abstracts:
 
-[PMID 31187887] Metformin: time to reviewic kidney disease.
-(The Medical journal of Australia, 2019)
-Metformin is recommended as first-line thause of its safety,
-low cost and potential cardiovascular benefits. The use of metformin was previously
-restricted in people with chronic kidney  over drug
-accumulation and metformin-associated lactic acidosis. Present-day large scale cohort
-studies now provide supporting evidence fin mild to moderate
-renal impairment (eGFR 30-60 mL/min/1.73m2). However, prescribing metformin in people
-with severe renal impairment (eGFR < 30 mersial.
+[PMID 31187887] Metformin: time to review its role and safety in chronic kidney disease. (The Medical journal of Australia, 2019)
+Metformin is recommended as first-line therapy for type 2 diabetes because of its safety, low cost and potential cardiovascular benefits. The use of metformin was previously restricted in people with chronic kidney disease (CKD) due to concerns over drug accumulation and metformin-associated lactic acidosis. Present-day large scale cohort studies now provide supporting evidence for the safe use of metformin in mild to moderate renal impairment (eGFR 30-60 mL/min/1.73m2). However, prescribing metformin in people with severe renal impairment (eGFR < 30 mL/min/1.73m2) remains controversial.
 
 ---
 
-[PMID 24711640] Metformin in chronic kidnk.
-(Peritoneal dialysis international, 2014)
-Metformin has traditionally been regardedhough guidelines
-have relaxed to permit therapy if GFR > 30 mL/min. Lactic acidosis is rare (6/100,000
-patient-years) and the risk is not increaents...
+[PMID 24711640] Metformin in chronic kidney disease: time for a rethink. (Peritoneal dialysis international : journal of the International Society for Peritoneal Dialysis, 2014)
+Metformin has traditionally been regarded as contraindicated in chronic kidney disease (CKD), though guidelines have relaxed to permit therapy if GFR > 30 mL/min. Lactic acidosis is rare (6/100,000 patient-years) and the risk is not increased in metformin-treated patients.
 
 ---
 
-[PMID 30061044] Safe Use of Metformin in nd CKD.
-(Canadian journal of diabetes, 2019)
-Metformin appears to be a safe option fordosage is adjusted
-individually. Stopping the drug during acute illness is also imperative...
+[PMID 30061044] Safe Use of Metformin in Adults With Type 2 Diabetes and Chronic Kidney Disease: Lower Dosages and Sick-Day Education Are Essential. (Canadian journal of diabetes, 2019)
+Metformin appears to be a safe option for patients with CKD, assuming dosage is adjusted individually. Stopping the drug during acute illness is also imperative to ensure its safe use.
 
---- (+ 2 more abstracts) ---
+---
+
+[PMID 33811249] Metformin prevents stroke damage in non-diabetic female mice with chronic kidney disease. (Scientific reports, 2021)
+Chronic kidney disease (CKD) worsens ischemic stroke severity. Metformin pre-conditioning improved neurological outcomes in CKD mice by enhancing AMPK activation and reducing apoptosis.
+
+---
+
+[PMID 33524231] Metformin inhibits chronic kidney disease-induced DNA damage and senescence of mesenchymal stem cells. (Aging cell, 2021)
+Metformin preconditioning attenuated accelerated senescence and DNA damage in CKD mesenchymal stem cells, suggesting a therapeutic benefit for autologous cell-based therapy.
 
 Question: is metformin safe in moderate CKD?
 
-(Without an API key the model answer is not generated — the full assembled prompt is printed instead, showing
-exactly what would be sent to the chat mo
+(With OPENAI_API_KEY set, the chat model responds here with a cited answer grounded in the abstracts above.)
 
 ---
-STEP 4a: GUARDRAIL — mixed embedding spaces
-Database holds vectors from ['hashbow:153oduces
-'openai:text-embedding-3-small:1536'. Vectors from different embedding models are
-incompatible -- re-load the corpus (load anged,
-first "DROP TABLE articles;" and re-run init-db) or restore the original
-EMBEDDINGS/EMBED_MODEL settings before se
+
+STEP 4a: GUARDRAIL -- mixed embedding spaces
+$ EMBEDDINGS=openai python -m pubmed_rag search "metformin" --mode vector
+
+Database holds vectors from ['hashbow:1536'] but the current config produces 'openai:text-embedding-3-small:1536'. Vectors from different embedding models are incompatible -- re-load the corpus (load --fresh; if EMBED_DIM also changed, first "DROP TABLE articles;" and re-run init-db) or restore the original EMBEDDINGS/EMBED_MODEL settings before searching.
 
 ---
-STEP 4b: GUARDRAIL — dimension mismatch
-articles.embedding is vector(1536) but thM=512.
-The dimension is baked into the schema, so re-loading alone can't fix this:
-drop the table first (psql: "DROP TABLE aand load again.
 
-Corpus after both refused attempts:
+STEP 4b: GUARDRAIL -- dimension mismatch (refused before truncating)
+$ EMBED_DIM=512 python -m pubmed_rag load --query "metformin" --max 1 --fresh
+
+articles.embedding is vector(1536) but the current config has EMBED_DIM=512. The dimension is baked into the schema, so re-loading alone can't fix this: drop the table first (psql: "DROP TABLE articles;"), then run init-db and load again.
+
+---
+
+CORPUS AFTER BOTH REFUSED ATTEMPTS (still intact):
+$ python -m pubmed_rag stats
+
 47 articles
-      47 embedded with hashbow:1536 (year
+      47 embedded with hashbow:1536 (years 2008-2026)
