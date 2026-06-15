@@ -2,32 +2,23 @@
 DEMO: topic intake with clarifying questions
 ==================================================================
 
-STARTING TOPIC (broad):
-  "anticoagulation in atrial fibrillation"
-
-CLARIFYING QUESTION 1 - Focus:
-  What's the specific clinical question?
-    [ ] DOAC vs warfarin        <-- selected
-    [ ] Who to anticoagulate
-    [ ] Special populations
-    [ ] Bleeding & safety
-
-CLARIFYING QUESTION 2 - Population:
-  Which patient population?
-    [ ] General adults
-    [x] Elderly (>=75)          <-- selected
-    [ ] Renal impairment / CKD
-    [ ] Asian patients
+STARTING TOPIC (broad):  "anticoagulation in atrial fibrillation"
+CLARIFY 1 (Focus):       DOAC vs warfarin            <-- selected
+CLARIFY 2 (Population):  Elderly (>=75)              <-- selected
 
 SYNTHESIZED QUERY:
   In adults aged 75 and older with atrial fibrillation, how do direct oral anticoagulants (DOACs) compare with warfarin for stroke prevention and bleeding risk?
 
 Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
-Chat model: gpt-4o-mini   |   k = 6 abstracts
+Context:   open-access full text where available, else abstract
+Answer:    gpt-4o-mini -- every claim carries a PMID + verbatim quote
+k = 6 sources
 ------------------------------------------------------------------
 
 GROUNDED ANSWER:
 
-In adults aged 75 and older with atrial fibrillation, direct oral anticoagulants (DOACs) are at least as effective as warfarin for stroke prevention. They are associated with a reduced risk of intracranial hemorrhage compared to warfarin, but some DOACs show an increase in other bleeding events, such as gastrointestinal bleeding. Overall, DOACs have a faster onset and offset of action and fewer food and drug interactions, which might make them preferable for some patients. However, the risk of stroke must always be balanced against the potential bleeding risk when determining the optimal treatment strategy [PMID 28805310].
+In adults aged 75 and older with atrial fibrillation, direct oral anticoagulants (DOACs) are considered at least as effective as warfarin for stroke prevention, with a lower risk of certain bleeding events. Specifically, "DOACs are at least as effective as warfarin for stroke prevention in elderly patients with NVAF. Compared with warfarin, DOACs were associated with reduced risk of intracranial hemorrhage" [PMID 28805310]. Furthermore, a meta-analysis showed that, in an uninterrupted anticoagulant strategy, DOACs are associated with significantly fewer major bleeding events compared to warfarin, "2.0% versus 3.3%; RR, 0.62; 95% CI, 0.47-0.82" [PMID 29794081].
+
+Additionally, a systematic review indicated that among DOACs, apixaban has the lowest risk of non-major bleeding, suggesting it may be a safer choice within this group of medications [PMID 37310479].
 
 Draft for clinician review -- verify against primary sources.

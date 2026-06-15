@@ -2,9 +2,23 @@
 QUESTION: For stroke prevention in atrial fibrillation, how do direct oral anticoagulants compare to warfarin?
 ==================================================================
 Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
-Chat model: gpt-4o-mini   |   k = 5 abstracts
+Context:   open-access full text where available, else abstract
+Answer:    gpt-4o-mini -- every claim carries a PMID + verbatim quote
+k = 6 sources
 ------------------------------------------------------------------
 
-Direct oral anticoagulants (DOACs) have demonstrated similar or improved effectiveness and safety outcomes compared with warfarin for stroke prevention in patients with atrial fibrillation. Specifically, in an uninterrupted anticoagulation strategy, DOACs are associated with a 38% lower risk of major bleeding compared to warfarin, though there are no differences in rates of stroke/systemic embolism and death between the two in this context. Under an interrupted anticoagulation strategy, there are also no significant differences observed in the outcomes of stroke/systemic embolism, major bleeding, and death between DOACs and warfarin [PMID 29794081]. Furthermore, DOACs have favorable pharmacological characteristics, including fixed dosing and no requirement for routine coagulation monitoring, which address many limitations associated with vitamin K antagonists like warfarin [PMID 26089678]. Overall, evidence suggests that DOACs may lead to a greater reduction in the risk of stroke or systemic embolism, all-cause mortality, and intracranial hemorrhage compared to warfarin [PMID 27924633].
+Direct oral anticoagulants (DOACs) are generally considered to have comparable or superior efficacy and safety profiles compared to warfarin for stroke prevention in atrial fibrillation. 
+
+1. Efficacy: "DOACs were at least as good as, if not superior to, warfarin in terms of efficacy for the prevention of stroke in patients with non-valvular AF" [PMID 27896543].
+
+2. Safety: In terms of major bleeding incidents, "the direct oral anticoagulants were associated with a similar or lower incidence of major bleeding compared with warfarin" [PMID 26089678]. Specifically, under an uninterrupted anticoagulant strategy, DOACs showed "significantly fewer major bleeding events (2.0% versus 3.3%; RR, 0.62; 95% CI, 0.47-0.82)" compared to warfarin [PMID 29794081].
+
+3. Convenience: DOACs offer several practical advantages, including "a faster onset of action (time to peak concentration: 0.5–4 hours versus 36–72 hours)" and "considerably fewer food and drug interactions" [PMID 26089678].
+
+4. Risk of specific complications: "The risk of intracranial hemorrhage (ICH) was 33%–70% lower in patients treated with a direct oral anticoagulant than in those treated with warfarin" [PMID 26089678].
+
+5. Patient adherence: Due to the lack of requirement for routine monitoring, "DOACs can be administered at fixed doses without a need for routine coagulation monitoring," which may improve patient adherence compared to warfarin, which requires regular INR checks and adjustments [PMID 27924633].
+
+Thus, DOACs are now often recommended as the preferred option for patients with nonvalvular atrial fibrillation, providing a balance of efficacy, safety, and convenience over warfarin. 
 
 Draft for clinician review -- verify against primary sources.

@@ -1,0 +1,29 @@
+==================================================================
+FULL-TEXT vs ABSTRACT-ONLY (same question, same retrieval)
+==================================================================
+Retrieval is identical (abstract embeddings). The only difference is
+what the chat model is allowed to read and quote.
+
+Sources retrieved for this question:
+  PMID 33031522 (2021): FULL TEXT
+  PMID 33620621 (2022): abstract only
+  PMID 39400108 (2024): FULL TEXT
+  PMID 38671190 (2024): abstract only
+  PMID 36041474 (2022): abstract only
+  PMID 30132036 (2018): abstract only
+
+------------------------------------------------------------------
+(A) --abstract-only  (quotes limited to abstract text)
+------------------------------------------------------------------
+SGLT2 inhibitors have a positive impact on heart failure outcomes. A meta-analysis indicated that "SGLT2 inhibitors reduced composite cardiovascular death or first hospitalisation for heart failure (hazard ratio 0·80 [95% CI 0·73-0·87])" [PMID 36041474]. Moreover, in another study, it was reported that "SGLT2 inhibitors were associated with lower composite outcome of heart failure (HF) hospitalization or cardiovascular death (RR 0.76, 95% CI 0.73-0.81, P < 0.01)" [PMID 33620621]. Additionally, SGLT2 inhibitors have also shown benefits specifically in patients with heart failure and preserved ejection fraction (HFpEF), leading to a decreased risk of cardiovascular hospitalization [PMID 39400108].
+
+In summary, SGLT2 inhibitors are associated with reduced risks of hospitalization due to heart failure and cardiovascular death, qualifying them as an essential treatment option for heart failure management.
+
+Draft for clinician review -- verify against primary sources.
+
+------------------------------------------------------------------
+(B) full text where available  (quotes can draw on the article body)
+------------------------------------------------------------------
+SGLT2 inhibitors significantly reduce heart failure outcomes. For instance, they are associated with a lower composite outcome of heart failure hospitalization or cardiovascular death, with a relative risk of 0.76 (95% CI 0.73-0.81) compared to placebo [PMID 33620621]; "SGLT2 inhibitors were associated with lower major adverse cardiovascular events (MACEs), HF hospitalization, cardiovascular mortality, all-cause mortality, myocardial infarction, and serious adverse events, compared with placebo." Additionally, in a meta-analysis combining several trials, SGLT2 inhibitors reduced the risk of composite cardiovascular death or hospitalization for heart failure (HR 0.80 [95% CI 0.73-0.87]) [PMID 36041474]; "SGLT2 inhibitors reduced composite cardiovascular death or first hospitalisation for heart failure." They have also shown efficacy across a broad range of patients with heart failure, irrespective of ejection fraction [PMID 36041474]; "These treatment effects for each of the studied endpoints were consistently observed in both the trials of heart failure with mildly reduced or preserved ejection fraction and across all five trials." 
+
+Draft for clinician review -- verify against primary sources.

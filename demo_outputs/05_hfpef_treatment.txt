@@ -2,9 +2,11 @@
 QUESTION: What treatments improve outcomes in heart failure with preserved ejection fraction?
 ==================================================================
 Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
-Chat model: gpt-4o-mini   |   k = 5 abstracts
+Context:   open-access full text where available, else abstract
+Answer:    gpt-4o-mini -- every claim carries a PMID + verbatim quote
+k = 6 sources
 ------------------------------------------------------------------
 
-Currently, no treatment has been clearly demonstrated to improve outcomes in heart failure with preserved ejection fraction (HFpEF) [PMID 29498023]. Although there is a growing interest in various therapies, including sodium-glucose cotransporter-2 inhibitors and certain novel drugs targeting cardiac inflammation and fibrosis, these options are still under research in large clinical trials [PMID 32236720]. Therefore, empirical treatment approaches and addressing associated cardiovascular comorbidities are recommended until more definitive results emerge [PMID 29498023].
+Currently, there are no treatments that have been clearly demonstrated to improve outcomes in heart failure with preserved ejection fraction (HFpEF). "no drug therapy was successful in improving survival" [PMID 32051635]. Moreover, "the failure of proven beneficial drugs in HFrEF to influence the outcome of patients with HFpEF" is a significant challenge [PMID 29498023]. Although some therapies are being explored, "no specific therapy based on these hypotheses has been proven to improve outcomes in HFpEF" [PMID 29414252]. 
 
 Draft for clinician review -- verify against primary sources.

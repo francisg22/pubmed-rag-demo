@@ -18,6 +18,12 @@ from . import config
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 EFETCH_BATCH = 200
 
+# Full text lives in PubMed Central, and only the open-access subset is
+# fetchable (~1/4 to 1/3 of a typical PubMed result set; higher for recent
+# papers). PMID -> PMCID via the ID Converter, then efetch from db=pmc.
+PMC_IDCONV = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
+FULLTEXT_MAX_CHARS = 16_000  # per-article cap so one long paper can't swamp the context
+
 
 @dataclass
 class Article:
@@ -110,3 +116,47 @@ def _parse(xml_text: str) -> list[Article]:
 def _text(el) -> str:
     """Flatten an element that may contain markup children (<i>, <sup>, ...)."""
     return "".join(el.itertext()).strip() if el is not None else ""
+
+
+def fetch_full_texts(pmids: list[str], max_chars: int = FULLTEXT_MAX_CHARS) -> dict[str, str]:
+    """Best-effort open-access full text for the given PMIDs.
+
+    Returns {pmid: body_text} only for articles whose full text is in PMC's
+    open-access subset; PMIDs absent from the result have no fetchable full
+    text and the caller should fall back to the abstract. Retrieval is
+    unaffected by this -- it only enriches what the chat model can quote.
+    """
+    if not pmids:
+        return {}
+    idconv = _params({"ids": ",".join(pmids), "format": "json"})
+    idconv.pop("db", None)  # ID Converter has no db parameter
+    resp = requests.get(PMC_IDCONV, params=idconv, timeout=30)
+    resp.raise_for_status()
+    pmcids = [r["pmcid"] for r in resp.json().get("records", []) if r.get("pmcid")]
+    if not pmcids:
+        return {}
+    _polite_pause()
+    # One efetch for all candidate PMCIDs; map each article back to its PMID.
+    resp = requests.post(
+        f"{EUTILS}/efetch.fcgi",
+        data=_params({"db": "pmc", "id": ",".join(c.replace("PMC", "") for c in pmcids), "retmode": "xml"}),
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return _parse_pmc(resp.text, max_chars)
+
+
+def _parse_pmc(xml_text: str, max_chars: int) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for art in ET.fromstring(xml_text).iterfind(".//article"):
+        pmid = next(
+            (a.text for a in art.iterfind(".//article-id") if a.get("pub-id-type") == "pmid"),
+            None,
+        )
+        body = art.find(".//body")
+        if not pmid or body is None:
+            continue  # no PMID match or not open-access (metadata-only record)
+        text = " ".join(t.strip() for t in body.itertext() if t.strip())
+        if text:
+            out[pmid.strip()] = text[:max_chars]
+    return out

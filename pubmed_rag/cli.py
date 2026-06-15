@@ -59,7 +59,7 @@ def cmd_search(args) -> None:
 
 
 def cmd_ask(args) -> None:
-    print(ask_mod.ask(args.question, k=args.k))
+    print(ask_mod.ask(args.question, k=args.k, full_text=not args.abstract_only))
 
 
 def cmd_stats(args) -> None:
@@ -100,9 +100,14 @@ def main() -> None:
     sp.add_argument("--verbose", "-v", action="store_true")
     sp.set_defaults(fn=cmd_search)
 
-    ap = sub.add_parser("ask", help="grounded Q&A with PMID citations")
+    ap = sub.add_parser("ask", help="grounded Q&A with cited quotes (full text where available)")
     ap.add_argument("question")
     ap.add_argument("--k", type=int, default=5)
+    ap.add_argument(
+        "--abstract-only",
+        action="store_true",
+        help="skip open-access full-text fetch; ground answers on abstracts only",
+    )
     ap.set_defaults(fn=cmd_ask)
 
     sub.add_parser("stats", help="corpus summary").set_defaults(fn=cmd_stats)
