@@ -1,5 +1,6 @@
 ==================================================================
-QUESTION: Is metformin safe to use in patients with moderate chronic kidney disease?
+QUESTION: Is metformin safe to use in patients with moderate chronic kidney
+disease?
 ==================================================================
 Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
 Context:   open-access full text where available, else abstract
@@ -7,10 +8,24 @@ Answer:    gpt-4o-mini -- every claim carries a PMID + verbatim quote
 k = 6 sources
 ------------------------------------------------------------------
 
-Metformin can be used in patients with moderate chronic kidney disease (CKD), specifically those with an estimated glomerular filtration rate (eGFR) above 30 mL/min. Current guidelines have relaxed the previous strict contraindications, allowing for cautious use of metformin in such patients. 
+Metformin can be used in patients with moderate chronic kidney disease (CKD),
+specifically those with an estimated glomerular filtration rate (eGFR) above 30
+mL/min. Current guidelines have relaxed the previous strict contraindications,
+allowing for cautious use of metformin in such patients.
 
-Studies indicate that the risk of lactic acidosis (LA), which was a major concern, is overstated, as "the fear is disproportionate" with an incidence in non-CKD patients of about 6/100,000 patient-years, and this risk is not increased in metformin-treated patients [PMID 24711640]. Moreover, appropriate dosing adjustments based on renal function can further enhance safety. According to pharmacokinetic studies, adjusting metformin dosages according to CKD stages has shown that "there is not a relationship between metformin levels and plasma lactate" as long as dosages are appropriately managed [PMID 30061044].
+Studies indicate that the risk of lactic acidosis (LA), which was a major
+concern, is overstated, as "the fear is disproportionate" with an incidence in
+non-CKD patients of about 6/100,000 patient-years, and this risk is not
+increased in metformin-treated patients [PMID 24711640]. Moreover, appropriate
+dosing adjustments based on renal function can further enhance safety. According
+to pharmacokinetic studies, adjusting metformin dosages according to CKD stages
+has shown that "there is not a relationship between metformin levels and plasma
+lactate" as long as dosages are appropriately managed [PMID 30061044].
 
-Additional evidence suggests that metformin may provide cardiovascular benefits and is associated with reductions in mortality, even in the presence of renal impairment [PMID 27690331]. Hence, it appears that "many nations have already adopted this as a recommendation" for its safe use with an eGFR as low as 30 mL/min [PMID 28616207].
+Additional evidence suggests that metformin may provide cardiovascular benefits
+and is associated with reductions in mortality, even in the presence of renal
+impairment [PMID 27690331]. Hence, it appears that "many nations have already
+adopted this as a recommendation" for its safe use with an eGFR as low as 30
+mL/min [PMID 28616207].
 
 Draft for clinician review -- verify against primary sources.

@@ -23,13 +23,15 @@ Files
 01_metformin_ckd.txt                       metformin safety in moderate CKD
 02_sglt2_heart_failure.txt                 SGLT2 inhibitors & HF hospitalization
 03_statins_primary_prevention_elderly.txt  statins for primary prevention >75
-04_doac_vs_warfarin_af.txt                 DOACs vs warfarin in atrial fibrillation
+04_doac_vs_warfarin_af.txt                 DOACs vs warfarin in atrial
+fibrillation
 05_hfpef_treatment.txt                     treatments for HFpEF
 06_copd_exacerbation.txt                   managing an acute COPD exacerbation
 07_hypertension_bp_target.txt              recommended BP target
 08_abstention_pneumonia.txt                OUT-OF-CORPUS -> model abstains
 09_semantic_vs_keyword.txt                 retrieval: dense vs lexical contrast
-10_clarified_doac_elderly.txt              broad topic narrowed via clarifying Qs
+10_clarified_doac_elderly.txt              broad topic narrowed via clarifying
+Qs
 11_adversarial_ignore_sources.txt          user jailbreak attempt -> refused
 12_prompt_injection.txt                    poisoned source -> injection ignored
 13_full_text_vs_abstract.txt               full-text vs abstract-only contrast

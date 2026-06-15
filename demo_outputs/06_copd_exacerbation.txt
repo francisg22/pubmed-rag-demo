@@ -7,20 +7,37 @@ Answer:    gpt-4o-mini -- every claim carries a PMID + verbatim quote
 k = 6 sources
 ------------------------------------------------------------------
 
-Management of an acute exacerbation of chronic obstructive pulmonary disease (COPD) should involve several key components:
+Management of an acute exacerbation of chronic obstructive pulmonary disease
+(COPD) should involve several key components:
 
-1. **Oxygen Therapy**: Careful management of oxygen therapy is essential, particularly for patients with significant hypoxemia. "Practical aspects of uncontrolled oxygen therapy" must be addressed in the therapeutic management of severe acute exacerbation of COPD [PMID 22476704].
+1. **Oxygen Therapy**: Careful management of oxygen therapy is essential,
+particularly for patients with significant hypoxemia. "Practical aspects of
+uncontrolled oxygen therapy" must be addressed in the therapeutic management of
+severe acute exacerbation of COPD [PMID 22476704].
 
-2. **Medication**: Treatment may include the use of systemic corticosteroids to reduce inflammation. The "dose and duration of glucocorticoids" are critical aspects of pharmacological management [PMID 22476704].
+2. **Medication**: Treatment may include the use of systemic corticosteroids to
+reduce inflammation. The "dose and duration of glucocorticoids" are critical
+aspects of pharmacological management [PMID 22476704].
 
-3. **Antibiotics**: If a bacterial infection is suspected, antibiotics should be initiated as part of the management protocol for an exacerbation [PMID 33146552].
+3. **Antibiotics**: If a bacterial infection is suspected, antibiotics should be
+initiated as part of the management protocol for an exacerbation [PMID
+33146552].
 
-4. **Monitoring and Support**: Patients may require mechanical ventilation if they exhibit signs of respiratory failure. "Mechanical ventilation" and other supportive therapies should be considered based on the severity of the exacerbation [PMID 22476704].
+4. **Monitoring and Support**: Patients may require mechanical ventilation if
+they exhibit signs of respiratory failure. "Mechanical ventilation" and other
+supportive therapies should be considered based on the severity of the
+exacerbation [PMID 22476704].
 
-5. **Assessment and Diagnostics**: It's vital to conduct assessments such as chest X-rays and blood gas analyses to evaluate the severity of the situation and to rule out other complications [PMID 22476704].
+5. **Assessment and Diagnostics**: It's vital to conduct assessments such as
+chest X-rays and blood gas analyses to evaluate the severity of the situation
+and to rule out other complications [PMID 22476704].
 
-6. **Follow-up and Rehabilitation**: Post-exacerbation, follow-up management, and rehabilitation plans should be set up to improve patient outcomes and prevent future exacerbations [PMID 33146552].
+6. **Follow-up and Rehabilitation**: Post-exacerbation, follow-up management,
+and rehabilitation plans should be set up to improve patient outcomes and
+prevent future exacerbations [PMID 33146552].
 
-In summary, the management of acute COPD exacerbations is multi-faceted, including oxygen therapy, corticosteroids, antibiotics, careful monitoring, and necessary diagnostic evaluations.
+In summary, the management of acute COPD exacerbations is multi-faceted,
+including oxygen therapy, corticosteroids, antibiotics, careful monitoring, and
+necessary diagnostic evaluations.
 
 Draft for clinician review -- verify against primary sources.

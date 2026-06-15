@@ -1,5 +1,6 @@
 ==================================================================
-QUESTION: What treatments improve outcomes in heart failure with preserved ejection fraction?
+QUESTION: What treatments improve outcomes in heart failure with preserved
+ejection fraction?
 ==================================================================
 Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
 Context:   open-access full text where available, else abstract
@@ -7,6 +8,12 @@ Answer:    gpt-4o-mini -- every claim carries a PMID + verbatim quote
 k = 6 sources
 ------------------------------------------------------------------
 
-Currently, there are no treatments that have been clearly demonstrated to improve outcomes in heart failure with preserved ejection fraction (HFpEF). "no drug therapy was successful in improving survival" [PMID 32051635]. Moreover, "the failure of proven beneficial drugs in HFrEF to influence the outcome of patients with HFpEF" is a significant challenge [PMID 29498023]. Although some therapies are being explored, "no specific therapy based on these hypotheses has been proven to improve outcomes in HFpEF" [PMID 29414252]. 
+Currently, there are no treatments that have been clearly demonstrated to
+improve outcomes in heart failure with preserved ejection fraction (HFpEF). "no
+drug therapy was successful in improving survival" [PMID 32051635]. Moreover,
+"the failure of proven beneficial drugs in HFrEF to influence the outcome of
+patients with HFpEF" is a significant challenge [PMID 29498023]. Although some
+therapies are being explored, "no specific therapy based on these hypotheses has
+been proven to improve outcomes in HFpEF" [PMID 29414252].
 
 Draft for clinician review -- verify against primary sources.

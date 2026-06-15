@@ -14,11 +14,16 @@ QUERY: blood thinners for an irregular heartbeat
 No results -- is the corpus loaded? (python -m pubmed_rag load --query ...)
 
 --- mode=hybrid (dense OpenAI embeddings + BM25, RRF-fused) ---
- 1. [0.0164] PMID 23748516 (2013) Stroke prevention in patients with atrial fibrillation: focus on new oral anticoagulants.
- 2. [0.0161] PMID 31533990 (2020) Stroke and thromboembolism prevention in atrial fibrillation.
- 3. [0.0159] PMID 26666325 (2015) The Use of Novel Oral Anticoagulants in Atrial Fibrillation.
- 4. [0.0156] PMID 28493056 (2017) Non-Vitamin K Oral Anticoagulants for Stroke Prevention in Special Populations with Atrial Fibrillation.
- 5. [0.0154] PMID 38134262 (2024) Stroke Prevention in Atrial Fibrillation: Our Current Failures and Required Research.
+ 1. [0.0164] PMID 23748516 (2013) Stroke prevention in patients with atrial
+ fibrillation: focus on new oral anticoagulants.
+ 2. [0.0161] PMID 31533990 (2020) Stroke and thromboembolism prevention in
+ atrial fibrillation.
+ 3. [0.0159] PMID 26666325 (2015) The Use of Novel Oral Anticoagulants in Atrial
+ Fibrillation.
+ 4. [0.0156] PMID 28493056 (2017) Non-Vitamin K Oral Anticoagulants for Stroke
+ Prevention in Special Populations with Atrial Fibrillation.
+ 5. [0.0154] PMID 38134262 (2024) Stroke Prevention in Atrial Fibrillation: Our
+ Current Failures and Required Research.
 
 ######################################################################
 QUERY: cholesterol pills to prevent heart attacks
@@ -27,9 +32,13 @@ QUERY: cholesterol pills to prevent heart attacks
 No results -- is the corpus loaded? (python -m pubmed_rag load --query ...)
 
 --- mode=hybrid (dense OpenAI embeddings + BM25, RRF-fused) ---
- 1. [0.0164] PMID 35934533 (2022) Statin therapy for the primary prevention of cardiovascular disease: Cons.
+ 1. [0.0164] PMID 35934533 (2022) Statin therapy for the primary prevention of
+ cardiovascular disease: Cons.
  2. [0.0161] PMID 25245412 (2014) Statins for all?
- 3. [0.0159] PMID 38869128 (2024) [Targeting dyslipidaemia in primary prevention of cardiovascular disease].
- 4. [0.0156] PMID 16075823 (2005) Combination niacin and statin therapy in primary and secondary prevention of cardiovascular disease.
- 5. [0.0154] PMID 33427435 (2021) Statin therapy for primary cardiovascular prevention in adults older than 75 years.
+ 3. [0.0159] PMID 38869128 (2024) [Targeting dyslipidaemia in primary prevention
+ of cardiovascular disease].
+ 4. [0.0156] PMID 16075823 (2005) Combination niacin and statin therapy in
+ primary and secondary prevention of cardiovascular disease.
+ 5. [0.0154] PMID 33427435 (2021) Statin therapy for primary cardiovascular
+ prevention in adults older than 75 years.
 

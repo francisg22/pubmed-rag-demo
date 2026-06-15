@@ -1,5 +1,6 @@
 ==================================================================
-QUESTION: Should statins be used for primary prevention of cardiovascular disease in adults over 75?
+QUESTION: Should statins be used for primary prevention of cardiovascular
+disease in adults over 75?
 ==================================================================
 Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
 Context:   open-access full text where available, else abstract
@@ -7,16 +8,30 @@ Answer:    gpt-4o-mini -- every claim carries a PMID + verbatim quote
 k = 6 sources
 ------------------------------------------------------------------
 
-Statins may be considered for primary prevention of cardiovascular disease (CVD) in adults over 75 years, but the evidence is mixed and recommendations vary. 
+Statins may be considered for primary prevention of cardiovascular disease (CVD)
+in adults over 75 years, but the evidence is mixed and recommendations vary.
 
-1. Several studies suggest that statins can reduce the risk of major vascular events in older adults. For instance, it has been reported that "for every 1 mmol/L reduction in LDL-C cholesterol in older adults (>75 years old), there is a 26% proportional reduction in major vascular events" [PMID 36598445].
+1. Several studies suggest that statins can reduce the risk of major vascular
+events in older adults. For instance, it has been reported that "for every 1
+mmol/L reduction in LDL-C cholesterol in older adults (>75 years old), there is
+a 26% proportional reduction in major vascular events" [PMID 36598445].
 
-2. A recent study found that initiating statin therapy in adults aged 75 to 84 years resulted in a risk reduction for overall CVD incidence of "5-year standardized risk reduction, 1.20% [95% CI, 0.57% to 1.82%]" [PMID 38801776].
+2. A recent study found that initiating statin therapy in adults aged 75 to 84
+years resulted in a risk reduction for overall CVD incidence of "5-year
+standardized risk reduction, 1.20% [95% CI, 0.57% to 1.82%]" [PMID 38801776].
 
-3. Despite potential benefits, the U.S. Preventive Services Task Force concludes there is "insufficient evidence to assess the balance of benefits and harms of initiating a statin for the primary prevention of CVD events and mortality in adults 76 years or older" [PMID 35997723].
+3. Despite potential benefits, the U.S. Preventive Services Task Force concludes
+there is "insufficient evidence to assess the balance of benefits and harms of
+initiating a statin for the primary prevention of CVD events and mortality in
+adults 76 years or older" [PMID 35997723].
 
-4. The consensus suggests that statins may still be offered to older adults following a shared decision-making process while considering individual factors such as "life expectancy, polypharmacy, frailty, and potential adverse effects" [PMID 33427435].
+4. The consensus suggests that statins may still be offered to older adults
+following a shared decision-making process while considering individual factors
+such as "life expectancy, polypharmacy, frailty, and potential adverse effects"
+[PMID 33427435].
 
-In summary, while there are potential benefits, particularly in those 75 to 84 years, the hesitance around initiating statins in those over 75 reflects a need for more tailored approaches and careful consideration of risks versus benefits.
+In summary, while there are potential benefits, particularly in those 75 to 84
+years, the hesitance around initiating statins in those over 75 reflects a need
+for more tailored approaches and careful consideration of risks versus benefits.
 
 Draft for clinician review -- verify against primary sources.
