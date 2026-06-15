@@ -1,0 +1,10 @@
+==================================================================
+QUESTION: Should statins be used for primary prevention of cardiovascular disease in adults over 75?
+==================================================================
+Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
+Chat model: gpt-4o-mini   |   k = 5 abstracts
+------------------------------------------------------------------
+
+The use of statins for primary prevention of cardiovascular disease in adults aged 75 years and older remains controversial. While evidence suggests that statin therapy can reduce the risk of cardiovascular diseases in this age group, particularly in those aged 75 to 84 years and even in those aged 85 years or older, there is uncertainty regarding benefits for those over 75 due to a lack of robust clinical trial data and varying guideline recommendations. The U.S. Preventive Services Task Force also concludes that current evidence is insufficient to determine the balance of benefits and harms for this age group. Thus, a shared decision-making process is important where factors like life expectancy, polypharmacy, and potential adverse effects are taken into account before initiating statin therapy in older adults. [PMID 28577620][PMID 36598445][PMID 38801776][PMID 33427435][PMID 35997723].
+
+Draft for clinician review -- verify against primary sources.

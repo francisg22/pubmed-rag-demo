@@ -1,0 +1,10 @@
+==================================================================
+QUESTION: Is metformin safe to use in patients with moderate chronic kidney disease?
+==================================================================
+Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
+Chat model: gpt-4o-mini   |   k = 5 abstracts
+------------------------------------------------------------------
+
+The abstracts indicate that metformin can be used cautiously in patients with chronic kidney disease (CKD), including moderate stages, assuming appropriate dosage adjustments are made based on kidney function. Some studies suggest that previous fears regarding lactic acidosis may be overstated and that metformin is not nephrotoxic. Specifically, it is mentioned that stopping metformin during acute illness is essential to ensure its safe use in this population [PMID 22641582][PMID 30061044][PMID 21325870]. Furthermore, there is a recognition that if dosages are adjusted to the level of CKD and careful monitoring is applied, metformin may be a safe option even for those with reduced kidney function [PMID 27690331][PMID 28616207].
+
+Draft for clinician review -- verify against primary sources.

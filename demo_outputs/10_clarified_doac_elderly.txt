@@ -1,0 +1,33 @@
+==================================================================
+DEMO: topic intake with clarifying questions
+==================================================================
+
+STARTING TOPIC (broad):
+  "anticoagulation in atrial fibrillation"
+
+CLARIFYING QUESTION 1 - Focus:
+  What's the specific clinical question?
+    [ ] DOAC vs warfarin        <-- selected
+    [ ] Who to anticoagulate
+    [ ] Special populations
+    [ ] Bleeding & safety
+
+CLARIFYING QUESTION 2 - Population:
+  Which patient population?
+    [ ] General adults
+    [x] Elderly (>=75)          <-- selected
+    [ ] Renal impairment / CKD
+    [ ] Asian patients
+
+SYNTHESIZED QUERY:
+  In adults aged 75 and older with atrial fibrillation, how do direct oral anticoagulants (DOACs) compare with warfarin for stroke prevention and bleeding risk?
+
+Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
+Chat model: gpt-4o-mini   |   k = 6 abstracts
+------------------------------------------------------------------
+
+GROUNDED ANSWER:
+
+In adults aged 75 and older with atrial fibrillation, direct oral anticoagulants (DOACs) are at least as effective as warfarin for stroke prevention. They are associated with a reduced risk of intracranial hemorrhage compared to warfarin, but some DOACs show an increase in other bleeding events, such as gastrointestinal bleeding. Overall, DOACs have a faster onset and offset of action and fewer food and drug interactions, which might make them preferable for some patients. However, the risk of stroke must always be balanced against the potential bleeding risk when determining the optimal treatment strategy [PMID 28805310].
+
+Draft for clinician review -- verify against primary sources.

@@ -1,0 +1,22 @@
+==================================================================
+QUESTION: How should an acute COPD exacerbation be managed?
+==================================================================
+Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
+Chat model: gpt-4o-mini   |   k = 5 abstracts
+------------------------------------------------------------------
+
+The management of an acute COPD exacerbation (AECOPD) involves several key components. According to the literature, important aspects of managing severe AECOPD include:
+
+1. **Therapeutic Management**: Essential components include controlling oxygen therapy, selecting appropriate medications, and determining the dosage and duration of glucocorticoids. Antibiotics may be indicated based on clinical assessment, and mechanical ventilation might be necessary in severe cases [PMID 22476704].
+
+2. **Diagnostic Measures**: Conducting a thorough clinical history and physical examination is crucial. Accompanying examinations such as chest X-ray, blood gas analysis, ECG, and echocardiography can aid in the assessment [PMID 22476704].
+
+3. **Inhaled Medications**: Evidence suggests that inhaled corticosteroids, long-acting bronchodilators, and other treatments specific for stable COPD should be continued during exacerbations. Systemic steroids and antibiotics should be used based on usual criteria during exacerbations [PMID 33146552].
+
+4. **Monitoring and Adjustment**: Patients should be monitored closely during periods of high respiratory distress, and treatment strategies may be adjusted based on their response. In cases where COVID-19 symptoms might overlap, testing for SARS-CoV-2 is recommended [PMID 33146552].
+
+5. **Healthcare Coordination**: The management plans for AECOPD should include follow-up strategies and possibly hospitalization for those with moderate-to-severe exacerbations, ensuring they receive appropriate care [PMID 33146552].
+
+Overall, the clinical management of AECOPD is multifaceted and requires careful assessment and an individualized approach based on severity and patient history.
+
+Draft for clinician review -- verify against primary sources.

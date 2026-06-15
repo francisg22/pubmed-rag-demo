@@ -1,0 +1,10 @@
+==================================================================
+QUESTION: What blood pressure target is recommended for adults being treated for hypertension?
+==================================================================
+Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
+Chat model: gpt-4o-mini   |   k = 5 abstracts
+------------------------------------------------------------------
+
+The 2025 American College of Cardiology/American Heart Association guideline recommends an office blood pressure goal of <130/80 mm Hg for adults with confirmed hypertension, with encouragement to further reduce systolic blood pressure to <120 mm Hg [PMID 40874629]. Similarly, general recommendations suggest treating patients with uncomplicated hypertension to a target BP of <140/90 mmHg, or lower if tolerated, particularly in selected high cardiovascular risk populations [PMID 27456450]. 
+
+Draft for clinician review -- verify against primary sources.

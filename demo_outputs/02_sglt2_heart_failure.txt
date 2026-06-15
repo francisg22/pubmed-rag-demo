@@ -1,0 +1,10 @@
+==================================================================
+QUESTION: Do SGLT2 inhibitors reduce heart failure hospitalizations, and how?
+==================================================================
+Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
+Chat model: gpt-4o-mini   |   k = 5 abstracts
+------------------------------------------------------------------
+
+Yes, SGLT2 inhibitors reduce heart failure hospitalizations. In a meta-analysis of five randomized controlled trials including 21,947 participants, SGLT2 inhibitors were associated with a reduced risk of hospitalizations for heart failure, showing a hazard ratio of 0.72 (95% CI 0.67-0.78) [PMID 36041474]. Additionally, in another meta-analysis, SGLT2 inhibitors were reported to lower the composite outcome of heart failure hospitalization or cardiovascular death with a relative risk of 0.76 (95% CI 0.73-0.81) [PMID 33620621]. In patients with chronic kidney disease, SGLT2 inhibitors also significantly reduced the risk of hospitalization for heart failure by 35% [PMID 38047108]. 
+
+Draft for clinician review -- verify against primary sources.

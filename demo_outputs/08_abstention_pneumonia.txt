@@ -1,0 +1,8 @@
+==================================================================
+QUESTION: What is the recommended first-line antibiotic regimen for community-acquired pneumonia?
+==================================================================
+Retrieval: hybrid (RRF over OpenAI text-embedding-3-small + BM25)
+Chat model: gpt-4o-mini   |   k = 5 abstracts
+------------------------------------------------------------------
+
+The abstracts provided do not contain information regarding the recommended first-line antibiotic regimen for community-acquired pneumonia. Draft for clinician review -- verify against primary sources.
