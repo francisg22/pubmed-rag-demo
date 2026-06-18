@@ -1,11 +1,14 @@
 # PubMed RAG starter demo
 
-DISCLAIMER: this was completely vibe coded by fable, none of it is my own work
+DISCLAIMER: This was mostly vibe coded by claude code, little is my own work. 
+Mainly created as a demo/proof of concept to show off.
 
 A minimal, end-to-end Retrieval-Augmented Generation (RAG) pipeline matching the
 stack from the meeting notes: **PubMed articles → OpenAI embeddings → Postgres +
-pgvector → grounded Q&A with PMID citations**. Built as a hands-on learning
-exercise — every module is short enough to read in one sitting.
+pgvector → grounded Q&A with PMID citations and verbatim quotes**. Answer it two
+ways — a one-shot RAG call or an **agentic** loop where the model drives
+retrieval through tools — from the CLI or a **Streamlit GUI**. Built as a
+hands-on learning exercise — every module is short enough to read in one sitting.
 
 ```
  PubMed E-utilities                  OpenAI /v1/embeddings
@@ -20,9 +23,15 @@ exercise — every module is short enough to read in one sitting.
                               └── GIN index    (tsvector keyword)
                                               │
               query ──► embed.py ──► search.py: vector | keyword | hybrid (RRF)
-                                              │ top-k abstracts
+                                              │ top-k articles
                                               ▼
-                              ask.py ──► OpenAI chat ──► cited draft answer
+            full text (PMC open-access) where available, else abstract
+                                              │
+            ask.py  (one-shot)      ·      agent.py  (model-driven, tool-calling)
+                                              ▼
+                       OpenAI chat ──► cited + quoted draft answer
+                                              ▲
+                          CLI  (python -m pubmed_rag)  ·  app.py  (Streamlit GUI)
 ```
 
 ## Quickstart
@@ -52,7 +61,15 @@ python -m pubmed_rag init-db
 python -m pubmed_rag load --query "metformin chronic kidney disease" --max 50
 python -m pubmed_rag search "is metformin safe in renal impairment" --mode hybrid
 python -m pubmed_rag ask "is metformin safe in moderate CKD?"
+python -m pubmed_rag agent "compare metformin and SGLT2 inhibitors in patients with both T2DM and CKD"
 python -m pubmed_rag stats
+```
+
+Or use the GUI (chat UI with a sources panel and a live agent trace):
+
+```bash
+pip install -r requirements-gui.txt   # adds streamlit
+streamlit run app.py
 ```
 
 No `OPENAI_API_KEY`? Everything still runs: the demo falls back to a
@@ -70,7 +87,36 @@ calling the chat model, which is itself instructive.
 | `embed.py` | Batched calls to `/v1/embeddings`, the `dimensions` parameter, input-length caps, and why doc & query vectors must come from the same model |
 | `db.py` | `vector(1536)` column, HNSW vs GIN indexes, the 2000-dim HNSW ceiling, upserts, and recording the embedding model with every row |
 | `search.py` | Cosine ANN (`<=>`), Postgres full-text as the sparse arm, and Reciprocal Rank Fusion for hybrid search |
-| `ask.py` | The grounding/citation/abstention/human-review prompt pattern for clinical RAG |
+| `ask.py` | One-shot RAG: the grounding/citation/**quote**/abstention/human-review prompt pattern, with open-access full text pulled into context at answer time |
+| `agent.py` | Agentic RAG: OpenAI **function calling** — the model drives retrieval through `search_literature`/`get_full_text` tools in a loop, instead of one fixed retrieval |
+| `app.py` | A ~170-line **Streamlit** GUI over both modes: chat, a sources panel, and a live tool-call trace |
+
+## Answer modes & the GUI
+
+There are two ways to answer a question, sharing the same retrieval and safety rules:
+
+- **One-shot (`ask`)** — runs a single hybrid search, pulls the top-k articles
+  (open-access full text where available, else abstract) into one prompt, and
+  makes one chat call. Simple, cheap, predictable.
+- **Agentic (`agent`)** — gives the model two tools (`search_literature`,
+  `get_full_text`) and lets it decide what to look up. It can search, read a
+  result, refine the query, search again, and only then answer — an OpenAI
+  function-calling (ReAct-style) loop. Better for multi-part questions; costs
+  more (several round trips). The CLI prints each tool call live. The first turn
+  is forced to search so the model can't answer from its own memory, and if it
+  runs out of tool-call rounds the final answer is re-grounded (it must cite from
+  what it already retrieved or admit it lacks evidence — never fall back on
+  outside knowledge).
+
+Both enforce the same contract: answer **only** from retrieved sources, every
+claim carries a `[PMID]` **and a verbatim quote**, abstain when unsupported, and
+ignore any instructions embedded inside the sources.
+
+The **GUI** (`streamlit run app.py`) wraps both: a chat box, an engine toggle
+(agentic vs one-shot), `k`/mode/abstract-only controls, an expandable **Sources
+used** panel (with full-text-vs-abstract badges), and — in agentic mode — a live
+**"what the agent did"** trace of every search and full-text fetch. That trace is
+the most compelling thing to show: it makes model-driven retrieval visible.
 
 ## Technical details
 
@@ -85,12 +131,14 @@ number below is measured from a live run, not estimated.
 | Vector store | PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) | 17.10 / 0.8.2 |
 | DB driver | psycopg (v3, binary) — no ORM, raw parameterized SQL | 3.3 |
 | Embeddings | OpenAI `text-embedding-3-small` (1536-dim) + offline `hashbow` fallback | openai 2.41 |
-| Chat | OpenAI `gpt-4o-mini` (configurable) | — |
-| Fetch | NCBI E-utilities over `requests` | 2.34 |
+| Chat | OpenAI `gpt-4o-mini` — one-shot **and** agentic tool calling (configurable) | — |
+| Fetch | NCBI E-utilities over `requests` (abstracts + open-access full text via PMC) | 2.34 |
+| GUI (optional) | Streamlit | 1.58 |
 
-The whole pipeline is **~600 lines across 9 modules** (`fetch` 112, `cli` 111,
-`db`/`search` 109 each, `embed` 67, `ask` 51, `config` 40). It is meant to be
-read end-to-end, not depended on.
+The package is **~920 lines across 10 modules** (`agent` 218, `fetch` 162,
+`cli` 139, `db`/`search` 109 each, `ask` 74, `embed` 67, `config` 40), plus a
+~170-line Streamlit GUI (`app.py`). It is meant to be read end-to-end, not
+depended on.
 
 ### Corpus (as loaded in `example_output.txt`)
 
@@ -165,16 +213,24 @@ the design discussion. Keep real records out of this repo.
 
 ## Where to take it next
 
+Already added since the first cut: **agentic tool-calling** (`agent.py`),
+**open-access full text** pulled into the answer context (`fetch.fetch_full_texts`),
+and a **Streamlit GUI** (`app.py`). Still open:
+
 1. **Reranking** — add a cross-encoder pass over the top-50 hybrid candidates.
-2. **Chunking** — pull full-text PMC articles and split by section with overlap
-   (one row per chunk, plus a `chunk_id`), instead of one row per abstract.
+2. **Chunking** — index full-text PMC articles split by section with overlap
+   (one row per chunk, plus a `chunk_id`) so *retrieval* — not just the answer —
+   sees the body, instead of one row per abstract.
 3. **Recency filtering** — `WHERE pub_year >= ...` is already possible; note
    that with HNSW the filter applies *after* the index scan, so selective
    filters need iterative index scans (pgvector ≥ 0.8).
 4. **Evaluation** — a gold set of questions with known-relevant PMIDs; measure
    recall@k before/after every change. This is the piece that separates a demo
    from something deployable.
-5. **Scale** — pgvector is comfortably sufficient here; revisit dedicated
+5. **Streaming + productionizing the GUI** — stream tokens; when it needs real
+   users/auth, move to a FastAPI backend (the agent loop is already a clean
+   library function) with a React or HTMX front end.
+6. **Scale** — pgvector is comfortably sufficient here; revisit dedicated
    engines (e.g., turbopuffer) only at hundreds of millions of chunks.
 
 ## References

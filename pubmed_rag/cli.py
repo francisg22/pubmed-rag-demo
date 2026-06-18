@@ -1,6 +1,7 @@
 """Command-line entry point: python -m pubmed_rag <command>"""
 import argparse
 
+from . import agent as agent_mod
 from . import ask as ask_mod
 from . import config, db, embed, fetch
 from . import search as search_mod
@@ -62,6 +63,22 @@ def cmd_ask(args) -> None:
     print(ask_mod.ask(args.question, k=args.k, full_text=not args.abstract_only))
 
 
+def cmd_agent(args) -> None:
+    def on_event(ev) -> None:
+        if ev["type"] == "tool_call":
+            shown = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
+            print(f"  -> {ev['name']}({shown})")
+        elif ev["type"] == "tool_result":
+            print(f"     {ev['result']}")
+
+    print("Agent working (tool calls shown live):\n")
+    result = agent_mod.run_agent(
+        args.question, k=args.k, max_steps=args.max_steps, on_event=on_event
+    )
+    print(f"\n--- answer ({result['steps']} step(s)) ---\n")
+    print(result["answer"])
+
+
 def cmd_stats(args) -> None:
     with db.connect() as conn:
         total = conn.execute("SELECT count(*) FROM articles").fetchone()[0]
@@ -109,6 +126,12 @@ def main() -> None:
         help="skip open-access full-text fetch; ground answers on abstracts only",
     )
     ap.set_defaults(fn=cmd_ask)
+
+    gp = sub.add_parser("agent", help="agentic Q&A -- the model drives retrieval via tools")
+    gp.add_argument("question")
+    gp.add_argument("--k", type=int, default=6, help="results per search (default 6)")
+    gp.add_argument("--max-steps", type=int, default=6, help="max tool-calling rounds (default 6)")
+    gp.set_defaults(fn=cmd_agent)
 
     sub.add_parser("stats", help="corpus summary").set_defaults(fn=cmd_stats)
 

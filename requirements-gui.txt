@@ -1,0 +1,3 @@
+# GUI extras (kept separate so the core demo stays dependency-light).
+# Install with:  pip install -r requirements.txt -r requirements-gui.txt
+streamlit>=1.40

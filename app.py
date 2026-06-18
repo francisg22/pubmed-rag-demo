@@ -1,0 +1,174 @@
+"""Streamlit GUI for the PubMed RAG demo.
+
+A thin presentation layer over the existing package:
+  - One-shot RAG  -> pubmed_rag.ask  (fixed hybrid retrieval, then answer)
+  - Agentic RAG   -> pubmed_rag.agent (the model drives retrieval via tools)
+
+Run with:  streamlit run app.py
+(Needs the Postgres/pgvector container up and OPENAI_API_KEY in .env.)
+"""
+import streamlit as st
+
+from pubmed_rag import agent as agent_mod
+from pubmed_rag import ask as ask_mod
+from pubmed_rag import config, db, fetch
+from pubmed_rag.search import search
+
+st.set_page_config(page_title="PubMed RAG (POC)", page_icon="🔬", layout="wide")
+SNIPPET = 320
+
+
+@st.cache_data(ttl=300)
+def corpus_info():
+    with db.connect() as conn:
+        total = conn.execute("SELECT count(*) FROM articles").fetchone()[0]
+        y0, y1 = conn.execute("SELECT min(pub_year), max(pub_year) FROM articles").fetchone()
+        models = [r[0] for r in conn.execute("SELECT DISTINCT embed_model FROM articles")]
+    return total, y0, y1, models
+
+
+def render_sources(sources):
+    full = sum(1 for s in sources if s["full_text"])
+    with st.expander(f"📚 Sources used ({len(sources)} · {full} full text)"):
+        for s in sources:
+            badge = "🟢 full text" if s["full_text"] else "⚪ abstract"
+            st.markdown(
+                f"**[PMID {s['pmid']}]** {s['title']}  \n"
+                f"*{s['journal'] or 'journal unknown'}, {s['year'] or '?'}* · "
+                f"{badge} · score {s['score']:.4f}"
+            )
+            st.caption(s["snippet"])
+
+
+def render_trace(trace):
+    with st.expander(f"🔧 What the agent did ({len(trace)} events)"):
+        for ev in trace:
+            if ev["type"] == "tool_call":
+                args = ", ".join(f"{key}={val!r}" for key, val in ev["args"].items())
+                st.markdown(f"→ `{ev['name']}`({args})")
+            else:
+                st.caption(f"   ↳ {ev['result']}")
+
+
+def one_shot_answer(q, k, mode, abstract_only):
+    """Single retrieval + single answer, reusing ask.py's prompt/context so the
+    GUI shows the exact sources that fed the answer (no double fetch)."""
+    hits = search(q, k=k, mode=mode)
+    if not hits:
+        return "No matching articles in the local corpus.", []
+    ft = {} if abstract_only else fetch.fetch_full_texts([h.pmid for h in hits])
+    user_msg = f"Sources:\n\n{ask_mod.build_context(hits, ft)}\n\nQuestion: {q}"
+    if config.OPENAI_API_KEY:
+        from openai import OpenAI
+
+        answer = (
+            OpenAI()
+            .chat.completions.create(
+                model=config.CHAT_MODEL,
+                messages=[
+                    {"role": "system", "content": ask_mod.SYSTEM_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+            )
+            .choices[0]
+            .message.content
+        )
+    else:
+        answer = "[no OPENAI_API_KEY — showing the assembled grounded prompt]\n\n" + user_msg
+    sources = [
+        {
+            "pmid": h.pmid,
+            "title": h.title,
+            "journal": h.journal,
+            "year": h.pub_year,
+            "score": h.score,
+            "full_text": h.pmid in ft,
+            "snippet": (h.abstract or "")[:SNIPPET],
+        }
+        for h in hits
+    ]
+    return answer, sources
+
+
+# ----- header -----
+st.title("🔬 PubMed RAG — clinician literature assistant")
+st.caption(
+    "Proof of concept · public literature only, no PHI · answers are drafts for clinician review"
+)
+
+# ----- sidebar -----
+with st.sidebar:
+    st.header("Settings")
+    engine = st.radio("Engine", ["Agentic (model drives retrieval)", "One-shot RAG"])
+    agentic = engine.startswith("Agentic")
+    k = st.slider("Sources (k)", 3, 12, 6)
+    if agentic:
+        max_steps = st.slider("Max tool-call rounds", 2, 10, 6)
+        mode, abstract_only = "hybrid", False
+    else:
+        mode = st.selectbox("Retrieval mode", ["hybrid", "vector", "keyword"])
+        abstract_only = st.checkbox("Abstract-only (skip full-text fetch)", value=False)
+        max_steps = None
+
+    st.divider()
+    try:
+        total, y0, y1, models = corpus_info()
+        st.metric("Corpus", f"{total} articles")
+        st.caption(f"Years {y0}–{y1}")
+        st.caption("Embeddings: " + ", ".join(models))
+    except Exception as e:
+        st.error(f"Database not reachable — is the container up?\n\n{e}")
+    st.caption(f"Chat model: `{config.CHAT_MODEL}`")
+    if not config.OPENAI_API_KEY:
+        st.warning(
+            "No OPENAI_API_KEY set. One-shot mode shows the assembled prompt; "
+            "the agent can't run without a chat model."
+        )
+    if st.button("Clear conversation"):
+        st.session_state.history = []
+
+# ----- conversation history -----
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+for turn in st.session_state.history:
+    with st.chat_message("user"):
+        st.markdown(turn["question"])
+    with st.chat_message("assistant"):
+        st.markdown(turn["answer"])
+        if turn.get("trace"):
+            render_trace(turn["trace"])
+        if turn.get("sources"):
+            render_sources(turn["sources"])
+
+# ----- input -----
+q = st.chat_input("Ask a clinical question…")
+if q:
+    with st.chat_message("user"):
+        st.markdown(q)
+    with st.chat_message("assistant"):
+        if agentic:
+            status = st.status("Searching the literature…", expanded=True)
+
+            def on_event(ev):
+                if ev["type"] == "tool_call":
+                    args = ", ".join(f"{key}={val!r}" for key, val in ev["args"].items())
+                    status.write(f"→ `{ev['name']}`({args})")
+                else:
+                    status.write(f"   ↳ {ev['result']}")
+
+            result = agent_mod.run_agent(q, k=k, max_steps=max_steps, on_event=on_event)
+            status.update(label=f"Done — {result['steps']} step(s)", state="complete")
+            st.markdown(result["answer"])
+            render_trace(result["trace"])
+            st.session_state.history.append(
+                {"question": q, "answer": result["answer"], "trace": result["trace"]}
+            )
+        else:
+            with st.spinner("Retrieving and answering…"):
+                answer, sources = one_shot_answer(q, k, mode, abstract_only)
+            st.markdown(answer)
+            render_sources(sources)
+            st.session_state.history.append(
+                {"question": q, "answer": answer, "sources": sources}
+            )
