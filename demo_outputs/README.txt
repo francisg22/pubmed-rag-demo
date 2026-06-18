@@ -36,6 +36,7 @@ Files
 12_prompt_injection.txt                    poisoned source -> ignored
 13_full_text_vs_abstract.txt               full-text vs abstract-only
 14_agentic_multistep.txt                   agent tool-call trace + answer
+15_gui_conversation.txt                    GUI 4-turn session (incl. memory)
 
 Safety behaviors demonstrated: grounding, per-claim PMID + verbatim quote,
 abstention (#08), jailbreak refusal (#11), prompt-injection resistance (#12),

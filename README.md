@@ -118,6 +118,13 @@ used** panel (with full-text-vs-abstract badges), and — in agentic mode — a 
 **"what the agent did"** trace of every search and full-text fetch. That trace is
 the most compelling thing to show: it makes model-driven retrieval visible.
 
+**Conversation memory:** both modes accept a `history` of prior turns, so
+follow-ups work ("…and in *severe* CKD?" remembers the subject). Only the
+dialogue text is carried — the retrieved **sources are re-fetched fresh every
+turn, never re-sent** — which is what keeps the context small (the short answers
+are cheap; the full-text sources are what would blow the window). History is
+capped to the last `ask.HISTORY_TURNS` (6) turns.
+
 ## Technical details
 
 Concrete specs for anyone evaluating this as a reference implementation. Every

@@ -1,0 +1,164 @@
+==================================================================
+GUI CONVERSATION WALKTHROUGH
+a clinician working through a comorbid patient
+(type 2 diabetes + chronic kidney disease + heart failure)
+==================================================================
+Each block is one message typed into the Streamlit chat box. The
+GUI now
+carries the last few turns as conversation memory (dialogue only),
+so
+follow-ups work -- watch Turn 2.
+
+==================================================================
+TURN 1   .   Engine: One-shot RAG
+==================================================================
+You type:  Is metformin safe in a patient with moderate chronic
+kidney disease?
+
+Assistant:
+Metformin can be considered safe for use in patients with moderate
+chronic kidney disease (CKD), particularly with appropriate dosage
+adjustments and careful monitoring. "Evidence supports the safe
+use of appropriate doses of metformin in patients with chronic
+stable renal impairment" [PMID 21325870]. Additionally, guidelines
+have become less stringent, allowing its use when the estimated
+glomerular filtration rate (eGFR) is greater than 30 mL/min.
+"Metformin's use has been relaxed to permit therapy if the
+glomerular filtration rate (GFR) is > 30 mL/min" [PMID 24711640].
+Studies have demonstrated that with careful dosage adjustments,
+metformin does not significantly increase the risk of lactic
+acidosis, a concern historically associated with its use in renal
+impairment [PMID 30061044].  However, it is essential to note that
+monitoring renal function and adjusting the dosage accordingly is
+critical. "Stopping the drug during acute illness is also
+imperative to ensure its safe use" [PMID 30061044]. Current
+recommendations advocate for dose reductions based on the level of
+CKD, allowing metformin to be used "with caution in those with a
+GFR of 30–45 mL/min" [PMID 27690331].  Draft for clinician review
+-- verify against primary sources.
+
+GUI 'Sources used' (1 full text of 6):
+   [PMID 22641582] (2013) -- abstract
+   [PMID 21325870] (2011) -- abstract
+   [PMID 27690331] (2017) -- abstract
+   [PMID 30061044] (2019) -- abstract
+   [PMID 24711640] (2014) -- abstract
+   [PMID 28616207] (2017) -- full text
+
+==================================================================
+TURN 2   .   Engine: One-shot RAG   <-- a follow-up, no subject
+named
+==================================================================
+You type:  What about in severe CKD?
+
+(Memory resolves 'what about' to metformin from Turn 1 -- the
+question
+names no drug.)
+
+Assistant:
+The use of metformin in patients with severe chronic kidney
+disease (CKD) remains controversial and is generally not
+recommended. "Due to observed increased risk of lactic acidosis
+and all-cause mortality in people with type 2 diabetes and severe
+renal impairment, it is generally recommended that metformin is
+discontinued if renal function falls below this level or during
+acute renal deterioration" [PMID 31187887]. This aligns with the
+concerns regarding the risk of metformin accumulation leading to
+lactic acidosis in patients with significant renal impairment, as
+"the use of metformin was previously restricted in people with
+chronic kidney disease (CKD)" [PMID 31187887].  Additional
+literature supports that metformin should not be used in patients
+with an estimated glomerular filtration rate (eGFR) below 30
+mL/min due to these risks. Hence, for individuals with severe CKD,
+"prescribing metformin in people with severe renal impairment
+(eGFR < 30 mL/min/1.73m2) remains a controversial issue" [PMID
+31187887].   Draft for clinician review -- verify against primary
+sources.
+
+==================================================================
+TURN 3   .   Engine: Agentic  (flip the sidebar toggle)
+==================================================================
+You type:  Compare metformin and SGLT2 inhibitors for a patient
+who has both type 2 diabetes and chronic kidney disease.
+
+Live 'what the agent did' trace:
+   -> search_literature(query='metformin vs SGLT2 inhibitors type
+   2 diabetes chronic kidney disease', k=5)
+      5 hits: PMID 40022102, PMID 30449220, PMID 30697905, PMID
+      40962701, PMID 40279256
+   -> get_full_text(pmid='30449220')
+      PMID 30449220 -> abstract (2051 chars)
+   -> get_full_text(pmid='30697905')
+      PMID 30697905 -> abstract (2318 chars)
+   -> get_full_text(pmid='40022102')
+      PMID 40022102 -> full text (16000 chars)
+
+Assistant (3 steps):
+In comparing metformin and SGLT2 inhibitors for patients with type
+2 diabetes and chronic kidney disease (CKD), several key
+differences and considerations emerge.  ### Metformin -
+**First-line Treatment**: Metformin has been traditionally
+recommended as the first-line therapy for type 2 diabetes due to
+its efficacy, affordable cost, weight neutrality, and
+cardiovascular benefits. It is particularly recognized for its
+role in managing hyperglycemia and potentially slowing the
+progression of kidney disease [PMID 40022102]. - **Efficacy in
+CKD**: While metformin is effective in glycemic control, its
+efficacy may be diminished in patients with worsening renal
+function. Recent guidelines indicate it can be used in patients
+with an eGFR above 30 mL/min, though caution and regular
+monitoring are advised due to risks associated with lactic
+acidosis in severe CKD [PMID 40022102]. - **Limitations**:
+Metformin generally does not provide significant renal protective
+benefits compared to SGLT2 inhibitors. Its advantages in
+cardiovascular outcomes are recognized but may be less pronounced
+than those offered by SGLT2 inhibitors [PMID 40022102].  ### SGLT2
+Inhibitors - **Cardiovascular and Renal Protection**: SGLT2
+inhibitors have shown substantial benefits not only in glycemic
+control but also in cardiovascular and renal outcomes for patients
+with type 2 diabetes and CKD. They help lower glycated hemoglobin
+levels and also reduce albuminuria and the risk of progression to
+end-stage renal disease [PMID 30697905; PMID 30449220]. -
+**Efficacy with CKD**: Evidence suggests that while SGLT2
+inhibitors are modestly effective in lowering hemoglobin A1C in
+CKD patients, they maintain protective cardiovascular effects and
+significantly reduce the risk of heart failure and renal decline
+even at lower eGFRs [PMID 30697905]. - **Approval and Use**:
+Current guidelines recommend SGLT2 inhibitors for all patients
+with type 2 diabetes and diabetic kidney disease with an eGFR
+above 20 mL/min, emphasizing their comprehensive protective
+benefits [PMID 40022102; PMID 30697905].  ### Conclusion In
+summary, for patients with type 2 diabetes and CKD, SGLT2
+inhibitors are increasingly viewed as superior to metformin in
+providing both renal and cardiovascular protection, particularly
+in moderate to severe CKD stages. Metformin remains a viable
+option for better glycemic control in early CKD, but careful
+consideration should be taken in advanced stages due to potential
+risks.  Draft for clinician review -- verify against primary
+sources.
+
+==================================================================
+TURN 4   .   Engine: One-shot RAG  (the trust moment)
+==================================================================
+You type:  What is the first-line antibiotic regimen for
+community-acquired pneumonia?
+
+Assistant:
+The provided sources do not contain information regarding the
+first-line antibiotic regimen for community-acquired pneumonia.
+Therefore, I cannot provide an answer based on the available
+material.   Draft for clinician review -- verify against primary
+sources.
+
+No CAP articles are loaded, so it declines rather than inventing
+an
+answer -- the behavior that earns trust.
+
+==================================================================
+NOTE: conversation memory carries the last few turns of dialogue
+(not the
+retrieved sources, which are re-fetched fresh each turn). Long
+sessions
+are capped to the most recent turns. See README 'Answer modes &
+the GUI'.
+==================================================================

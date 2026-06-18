@@ -50,9 +50,11 @@ def render_trace(trace):
                 st.caption(f"   ↳ {ev['result']}")
 
 
-def one_shot_answer(q, k, mode, abstract_only):
+def one_shot_answer(q, k, mode, abstract_only, history=None):
     """Single retrieval + single answer, reusing ask.py's prompt/context so the
-    GUI shows the exact sources that fed the answer (no double fetch)."""
+    GUI shows the exact sources that fed the answer (no double fetch). Prior turns
+    (dialogue only) are prepended for conversation memory; sources are re-retrieved
+    fresh every turn and never carried forward."""
     hits = search(q, k=k, mode=mode)
     if not hits:
         return "No matching articles in the local corpus.", []
@@ -61,15 +63,14 @@ def one_shot_answer(q, k, mode, abstract_only):
     if config.OPENAI_API_KEY:
         from openai import OpenAI
 
+        messages = [
+            {"role": "system", "content": ask_mod.SYSTEM_PROMPT},
+            *ask_mod.history_messages(history),
+            {"role": "user", "content": user_msg},
+        ]
         answer = (
             OpenAI()
-            .chat.completions.create(
-                model=config.CHAT_MODEL,
-                messages=[
-                    {"role": "system", "content": ask_mod.SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-            )
+            .chat.completions.create(model=config.CHAT_MODEL, messages=messages)
             .choices[0]
             .message.content
         )
@@ -119,6 +120,10 @@ with st.sidebar:
     except Exception as e:
         st.error(f"Database not reachable — is the container up?\n\n{e}")
     st.caption(f"Chat model: `{config.CHAT_MODEL}`")
+    st.caption(
+        f"🧠 Memory: last {ask_mod.HISTORY_TURNS} turns carried as dialogue; "
+        "sources are re-retrieved each turn (never carried)."
+    )
     if not config.OPENAI_API_KEY:
         st.warning(
             "No OPENAI_API_KEY set. One-shot mode shows the assembled prompt; "
@@ -144,6 +149,9 @@ for turn in st.session_state.history:
 # ----- input -----
 q = st.chat_input("Ask a clinical question…")
 if q:
+    # Prior turns become conversation memory (dialogue text only). session_state
+    # holds only earlier turns at this point — the current one is appended after.
+    prior = [(t["question"], t["answer"]) for t in st.session_state.history]
     with st.chat_message("user"):
         st.markdown(q)
     with st.chat_message("assistant"):
@@ -157,7 +165,9 @@ if q:
                 else:
                     status.write(f"   ↳ {ev['result']}")
 
-            result = agent_mod.run_agent(q, k=k, max_steps=max_steps, on_event=on_event)
+            result = agent_mod.run_agent(
+                q, k=k, max_steps=max_steps, on_event=on_event, history=prior
+            )
             status.update(label=f"Done — {result['steps']} step(s)", state="complete")
             st.markdown(result["answer"])
             render_trace(result["trace"])
@@ -166,7 +176,7 @@ if q:
             )
         else:
             with st.spinner("Retrieving and answering…"):
-                answer, sources = one_shot_answer(q, k, mode, abstract_only)
+                answer, sources = one_shot_answer(q, k, mode, abstract_only, history=prior)
             st.markdown(answer)
             render_sources(sources)
             st.session_state.history.append(

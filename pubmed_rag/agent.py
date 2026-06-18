@@ -16,6 +16,7 @@ embedded inside tool results.
 import json
 
 from . import config, db, fetch
+from .ask import history_messages
 from .search import search
 
 AGENT_SYSTEM_PROMPT = """\
@@ -35,6 +36,8 @@ For every claim: (1) cite the PMID in square brackets, e.g. [PMID 12345678]; and
 (2) support it with a short, exact quote from that source in "double quotes" --
 copy the wording verbatim, never paraphrase inside quotes.
 If the corpus does not contain enough information to answer, say exactly that.
+Earlier turns are conversation context only -- ground this answer in what your
+tools return now.
 End every answer with: "Draft for clinician review -- verify against primary sources."
 """
 
@@ -116,7 +119,7 @@ def _do_full_text(pmid):
 _IMPLS = {"search_literature": _do_search, "get_full_text": _do_full_text}
 
 
-def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None) -> dict:
+def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None, history=None) -> dict:
     """Drive the tool-calling loop until the model answers.
 
     Returns {"answer": str, "trace": [event...], "steps": int}. `on_event(event)`
@@ -136,6 +139,7 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None) -> d
     client = OpenAI()
     messages = [
         {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+        *history_messages(history),
         {"role": "user", "content": question},
     ]
     trace: list[dict] = []

@@ -145,6 +145,11 @@ In the browser:
   (`search_literature` → `get_full_text` → answer). This visual is the most
   persuasive part of the whole demo.
 - Controls: `k`, retrieval mode, abstract-only, max tool-call rounds.
+- **Show conversation memory:** ask a question, then a follow-up that names no
+  subject — e.g. *"Is metformin safe in moderate CKD?"* then *"What about in
+  severe CKD?"* It resolves "what about" to metformin from the prior turn. (Only
+  the dialogue is carried; sources are re-retrieved each turn. Captured in
+  `demo_outputs/15_gui_conversation.txt`, Turn 2.)
 
 ## 8. Wrap-up talking points (30s)
 

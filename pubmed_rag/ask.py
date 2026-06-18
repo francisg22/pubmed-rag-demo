@@ -24,9 +24,25 @@ For every claim, do two things: (1) cite the PMID in square brackets, e.g.
 [PMID 12345678]; and (2) support it with a short, exact quote from that source in
 "double quotes" -- copy the wording verbatim, never paraphrase inside quotes.
 If the sources do not contain enough information to answer, say exactly that;
-do not speculate.
+do not speculate. Earlier turns in the conversation are context only -- ground
+this answer in the sources provided in the latest message.
 End every answer with: "Draft for clinician review -- verify against primary sources."
 """
+
+HISTORY_TURNS = 6  # prior (question, answer) pairs to carry as conversation memory
+
+
+def history_messages(history, max_turns: int = HISTORY_TURNS) -> list[dict]:
+    """Turn prior (question, answer) pairs into alternating chat messages, keeping
+    only the most recent `max_turns`. Only the dialogue text is carried -- never
+    the retrieved sources -- so context stays small and each turn re-retrieves
+    fresh. (The chat model's large context swallows the short answers easily; it's
+    the sources, especially full text, that would blow the budget if re-sent.)"""
+    msgs: list[dict] = []
+    for q, a in (history or [])[-max_turns:]:
+        msgs.append({"role": "user", "content": q})
+        msgs.append({"role": "assistant", "content": a})
+    return msgs
 
 
 def build_context(hits: list[Hit], fulltext: dict[str, str] | None = None) -> str:
@@ -43,7 +59,7 @@ def build_context(hits: list[Hit], fulltext: dict[str, str] | None = None) -> st
     return "\n\n---\n\n".join(blocks)
 
 
-def ask(question: str, k: int = 5, full_text: bool = True) -> str:
+def ask(question: str, k: int = 5, full_text: bool = True, history=None) -> str:
     hits = search(question, k=k, mode="hybrid")
     if not hits:
         return "No matching articles in the local corpus -- run `load` first."
@@ -64,11 +80,13 @@ def ask(question: str, k: int = 5, full_text: bool = True) -> str:
 
     from openai import OpenAI
 
-    resp = OpenAI().chat.completions.create(
-        model=config.CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg},
-        ],
-    )
+    # Prior turns (dialogue only) sit between the system prompt and the current,
+    # freshly-retrieved sources -- so the model has continuity without re-paying
+    # for old source text.
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        *history_messages(history),
+        {"role": "user", "content": user_msg},
+    ]
+    resp = OpenAI().chat.completions.create(model=config.CHAT_MODEL, messages=messages)
     return resp.choices[0].message.content
