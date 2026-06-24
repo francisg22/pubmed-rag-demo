@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 .env
+
+# Local-files corpus drop dir -- may contain sensitive/PHI files; never commit its contents
+data/local_docs/*
+!data/local_docs/.gitkeep
+!data/local_docs/README.md

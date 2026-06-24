@@ -1,5 +1,6 @@
 """Command-line entry point: python -m pubmed_rag <command>"""
 import argparse
+import json
 
 from . import agent as agent_mod
 from . import ask as ask_mod
@@ -79,6 +80,70 @@ def cmd_agent(args) -> None:
     print(result["answer"])
 
 
+def cmd_ingest(args) -> None:
+    from . import chunk as chunk_mod
+    from . import phi
+    from .sources import localfiles
+
+    root = args.path or config.LOCAL_DOCS_DIR
+    enabled = config.ALLOW_EMBEDDING and not args.dry_run
+    print(f"Source: {root}")
+    if enabled:
+        print("Embedding gate: ON  -- will embed via OpenAI and store in pgvector.")
+        db.init_local_docs()
+        sig = config.embedding_signature()
+    else:
+        why = "--dry-run" if args.dry_run else "ALLOW_EMBEDDING not set"
+        print(f"Embedding gate: OFF ({why}) -- analysis only. NO OpenAI calls, nothing stored.\n")
+
+    n_docs = n_chunks = n_tokens = n_skip = 0
+    phi_totals: dict[str, int] = {}
+
+    def on_skip(rel, reason):
+        nonlocal n_skip
+        n_skip += 1
+        if n_skip <= 15:
+            print(f"  skip: {rel} -- {reason}")
+
+    for doc in localfiles.iter_documents(root, on_skip=on_skip):
+        chunks = chunk_mod.chunk_text(doc.text)
+        if not chunks:
+            on_skip(doc.doc_id, "no chunks after splitting")
+            continue
+        n_docs += 1
+        n_chunks += len(chunks)
+        n_tokens += sum(c.n_tokens for c in chunks)
+        for name, cnt in phi.screen(doc.text).items():
+            phi_totals[name] = phi_totals.get(name, 0) + cnt
+        if enabled:
+            vectors = embed.embed_texts([c.text for c in chunks])
+            rows = [
+                (
+                    f"{doc.doc_id}#{c.ordinal}", doc.doc_id, c.ordinal, doc.title,
+                    doc.category, doc.source_path, c.text, json.dumps(doc.metadata),
+                    sig, db.vec_literal(v),
+                )
+                for c, v in zip(chunks, vectors)
+            ]
+            db.upsert_local_chunks(rows)
+
+    print(f"\n{n_docs} documents -> {n_chunks} chunks, ~{n_tokens:,} tokens "
+          f"({n_skip} files skipped)")
+    print(f"Estimated one-time embedding cost (text-embedding-3-small @ $0.02/1M): "
+          f"${n_tokens / 1_000_000 * 0.02:.4f}")
+    if phi_totals:
+        flags = ", ".join(f"{k}={v}" for k, v in sorted(phi_totals.items()))
+        print(f"PHI screen: POSSIBLE identifiers found -> {flags}. Review before enabling.")
+    else:
+        print("PHI screen: no obvious structured identifiers found "
+              "(not a guarantee -- does not catch free-text names).")
+    if enabled:
+        print(f"\nStored {n_chunks} chunks in '{config.LOCAL_DOCS_TABLE}'.")
+    else:
+        print("\nGate OFF: nothing was embedded, sent to OpenAI, or stored. "
+              "After clearing PHI, re-run with ALLOW_EMBEDDING=1 to embed + store.")
+
+
 def cmd_stats(args) -> None:
     with db.connect() as conn:
         total = conn.execute("SELECT count(*) FROM articles").fetchone()[0]
@@ -132,6 +197,18 @@ def main() -> None:
     gp.add_argument("--k", type=int, default=6, help="results per search (default 6)")
     gp.add_argument("--max-steps", type=int, default=6, help="max tool-calling rounds (default 6)")
     gp.set_defaults(fn=cmd_agent)
+
+    ip = sub.add_parser(
+        "ingest",
+        help="local files -> extract, chunk, PHI-screen (embeds ONLY if ALLOW_EMBEDDING=1)",
+    )
+    ip.add_argument("--path", help=f"corpus directory (default {config.LOCAL_DOCS_DIR})")
+    ip.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="force analysis only, even if ALLOW_EMBEDDING is set",
+    )
+    ip.set_defaults(fn=cmd_ingest)
 
     sub.add_parser("stats", help="corpus summary").set_defaults(fn=cmd_stats)
 

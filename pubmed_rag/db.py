@@ -107,3 +107,55 @@ def assert_signature_matches() -> None:
             'changed, first "DROP TABLE articles;" and re-run init-db) or restore '
             "the original EMBEDDINGS/EMBED_MODEL settings before searching."
         )
+
+
+# --- Local-files corpus (a separate chunk table; the PubMed `articles` flow is
+#     untouched). One row per chunk; the table name comes from config so a corpus
+#     stays isolated and the signature guard applies per table. ---
+
+def init_local_docs() -> None:
+    table = config.LOCAL_DOCS_TABLE
+    statements = [
+        "CREATE EXTENSION IF NOT EXISTS vector",
+        f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            chunk_id    text PRIMARY KEY,
+            doc_id      text NOT NULL,
+            ordinal     int  NOT NULL,
+            title       text,
+            category    text,
+            source_path text,
+            text        text NOT NULL,
+            metadata    jsonb,
+            embed_model text NOT NULL,
+            embedding   vector({config.EMBED_DIM}) NOT NULL,
+            fts         tsvector GENERATED ALWAYS AS
+                          (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(text, ''))) STORED
+        )
+        """,
+        f"CREATE INDEX IF NOT EXISTS {table}_embedding_idx ON {table} USING hnsw (embedding vector_cosine_ops)",
+        f"CREATE INDEX IF NOT EXISTS {table}_fts_idx ON {table} USING gin (fts)",
+        f"CREATE INDEX IF NOT EXISTS {table}_doc_idx ON {table} (doc_id)",
+    ]
+    with connect() as conn:
+        for stmt in statements:
+            conn.execute(stmt)
+
+
+def upsert_local_chunks(rows: list[tuple]) -> int:
+    """rows: (chunk_id, doc_id, ordinal, title, category, source_path, text,
+    metadata_json, embed_model, vec_literal)"""
+    table = config.LOCAL_DOCS_TABLE
+    sql = f"""
+        INSERT INTO {table}
+            (chunk_id, doc_id, ordinal, title, category, source_path, text, metadata, embed_model, embedding)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::vector)
+        ON CONFLICT (chunk_id) DO UPDATE SET
+            doc_id = EXCLUDED.doc_id, ordinal = EXCLUDED.ordinal, title = EXCLUDED.title,
+            category = EXCLUDED.category, source_path = EXCLUDED.source_path,
+            text = EXCLUDED.text, metadata = EXCLUDED.metadata,
+            embed_model = EXCLUDED.embed_model, embedding = EXCLUDED.embedding
+    """
+    with connect() as conn, conn.cursor() as cur:
+        cur.executemany(sql, rows)
+    return len(rows)

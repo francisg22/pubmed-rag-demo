@@ -38,3 +38,14 @@ def embedding_signature() -> str:
     if EMBEDDINGS == "openai":
         return f"openai:{EMBED_MODEL}:{EMBED_DIM}"
     return f"hashbow:{EMBED_DIM}"
+
+
+# --- Local-files corpus ---
+LOCAL_DOCS_DIR = os.environ.get("LOCAL_DOCS_DIR", "data/local_docs")
+LOCAL_DOCS_TABLE = os.environ.get("LOCAL_DOCS_TABLE", "local_docs")
+
+# HARD SAFETY GATE. While this is off, `ingest` only extracts, chunks, and
+# screens locally -- it makes NO embedding calls and sends NOTHING to OpenAI,
+# and writes nothing to the database. Turn it on (ALLOW_EMBEDDING=1) only after
+# you have confirmed the local corpus is free of PHI/PII.
+ALLOW_EMBEDDING = os.environ.get("ALLOW_EMBEDDING", "").lower() in ("1", "true", "yes")
