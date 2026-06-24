@@ -1,11 +1,14 @@
-"""Streamlit GUI for the PubMed RAG demo.
+"""Streamlit GUI for the RAG demo.
 
 A thin presentation layer over the existing package:
   - One-shot RAG  -> pubmed_rag.ask  (fixed hybrid retrieval, then answer)
   - Agentic RAG   -> pubmed_rag.agent (the model drives retrieval via tools)
 
-Run with:  streamlit run app.py
-(Needs the Postgres/pgvector container up and OPENAI_API_KEY in .env.)
+The active corpus (PubMed vs the local-files corpus) drives the title, banner,
+and stats. Retrieval is currently wired for PubMed only; other corpora show an
+ingestion-only notice rather than silently answering from the wrong data.
+
+Run with:  streamlit run app.py     (CORPUS=local_docs streamlit run app.py to start on that corpus)
 """
 import streamlit as st
 
@@ -14,17 +17,22 @@ from pubmed_rag import ask as ask_mod
 from pubmed_rag import config, db, fetch
 from pubmed_rag.search import search
 
-st.set_page_config(page_title="PubMed RAG (POC)", page_icon="🔬", layout="wide")
+# Browser-tab title/icon are fixed at launch from the CORPUS flag; the in-page
+# title reacts live to the sidebar corpus selector below.
+_launch = config.corpus_profile()
+st.set_page_config(page_title=f"{_launch['label']} (POC)", page_icon=_launch["icon"], layout="wide")
 SNIPPET = 320
 
 
-@st.cache_data(ttl=300)
-def corpus_info():
+@st.cache_data(ttl=60)
+def corpus_info(table):
+    """(total, models) for a corpus table, or None if it doesn't exist yet."""
     with db.connect() as conn:
-        total = conn.execute("SELECT count(*) FROM articles").fetchone()[0]
-        y0, y1 = conn.execute("SELECT min(pub_year), max(pub_year) FROM articles").fetchone()
-        models = [r[0] for r in conn.execute("SELECT DISTINCT embed_model FROM articles")]
-    return total, y0, y1, models
+        if conn.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is None:
+            return None
+        total = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        models = [r[0] for r in conn.execute(f"SELECT DISTINCT embed_model FROM {table}")]
+    return {"total": total, "models": models}
 
 
 def render_sources(sources):
@@ -91,15 +99,49 @@ def one_shot_answer(q, k, mode, abstract_only, history=None):
     return answer, sources
 
 
-# ----- header -----
-st.title("🔬 PubMed RAG — clinician literature assistant")
-st.caption(
-    "Proof of concept · public literature only, no PHI · answers are drafts for clinician review"
-)
-
-# ----- sidebar -----
+# ----- sidebar (part 1): corpus selection + status (shown for every corpus) -----
 with st.sidebar:
     st.header("Settings")
+    keys = list(config.CORPORA)
+    corpus_key = st.selectbox(
+        "Corpus",
+        keys,
+        index=keys.index(config.CORPUS) if config.CORPUS in keys else 0,
+        format_func=lambda k: config.CORPORA[k]["label"],
+    )
+    prof = config.corpus_profile(corpus_key)
+
+    st.divider()
+    try:
+        info = corpus_info(prof["table"])
+        if info is None:
+            st.metric("Corpus", "not ingested")
+            st.caption(f"Table `{prof['table']}` is empty / not created yet.")
+        else:
+            st.metric("Corpus", f"{info['total']} {prof['unit']}")
+            st.caption("Embeddings: " + ", ".join(info["models"]))
+    except Exception as e:
+        st.error(f"Database not reachable — is the container up?\n\n{e}")
+    if not config.OPENAI_API_KEY:
+        st.warning("No OPENAI_API_KEY set — answers fall back to showing the assembled prompt.")
+
+# ----- header (reacts to the corpus selector) -----
+st.title(prof["title"])
+st.caption(f"Proof of concept · {prof['banner']}")
+
+# ----- corpora whose retrieval isn't wired yet: ingestion-only notice -----
+if not prof["retrieval_ready"]:
+    st.info(
+        f"**{prof['label']}** is set up for **ingestion only** — retrieval and chat "
+        "aren't wired to this corpus yet.\n\n"
+        "Ingest local files with `python -m pubmed_rag ingest` (extraction, chunking, "
+        "and a PHI screen run locally; embedding stays gated off until you set "
+        "`ALLOW_EMBEDDING=1`). Switch the **Corpus** selector to PubMed to use the assistant."
+    )
+    st.stop()
+
+# ----- sidebar (part 2): engine controls (only for a retrieval-ready corpus) -----
+with st.sidebar:
     engine = st.radio("Engine", ["Agentic (model drives retrieval)", "One-shot RAG"])
     agentic = engine.startswith("Agentic")
     k = st.slider("Sources (k)", 3, 12, 6)
@@ -110,25 +152,11 @@ with st.sidebar:
         mode = st.selectbox("Retrieval mode", ["hybrid", "vector", "keyword"])
         abstract_only = st.checkbox("Abstract-only (skip full-text fetch)", value=False)
         max_steps = None
-
-    st.divider()
-    try:
-        total, y0, y1, models = corpus_info()
-        st.metric("Corpus", f"{total} articles")
-        st.caption(f"Years {y0}–{y1}")
-        st.caption("Embeddings: " + ", ".join(models))
-    except Exception as e:
-        st.error(f"Database not reachable — is the container up?\n\n{e}")
     st.caption(f"Chat model: `{config.CHAT_MODEL}`")
     st.caption(
         f"🧠 Memory: last {ask_mod.HISTORY_TURNS} turns carried as dialogue; "
         "sources are re-retrieved each turn (never carried)."
     )
-    if not config.OPENAI_API_KEY:
-        st.warning(
-            "No OPENAI_API_KEY set. One-shot mode shows the assembled prompt; "
-            "the agent can't run without a chat model."
-        )
     if st.button("Clear conversation"):
         st.session_state.history = []
 
@@ -147,7 +175,7 @@ for turn in st.session_state.history:
             render_sources(turn["sources"])
 
 # ----- input -----
-q = st.chat_input("Ask a clinical question…")
+q = st.chat_input(prof["placeholder"])
 if q:
     # Prior turns become conversation memory (dialogue text only). session_state
     # holds only earlier turns at this point — the current one is appended after.

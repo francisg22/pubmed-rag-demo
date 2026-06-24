@@ -49,3 +49,41 @@ LOCAL_DOCS_TABLE = os.environ.get("LOCAL_DOCS_TABLE", "local_docs")
 # and writes nothing to the database. Turn it on (ALLOW_EMBEDDING=1) only after
 # you have confirmed the local corpus is free of PHI/PII.
 ALLOW_EMBEDDING = os.environ.get("ALLOW_EMBEDDING", "").lower() in ("1", "true", "yes")
+
+
+# --- Corpus profiles ---
+# Per-corpus presentation + storage metadata. Drives the GUI framing now, and
+# (once wired) the retrieval table and citation style. `retrieval_ready` flags
+# whether search/ask/agent are wired for a corpus yet -- only PubMed is so far.
+CORPORA = {
+    "pubmed": {
+        "label": "PubMed RAG",
+        "title": "🔬 PubMed RAG — clinician literature assistant",
+        "icon": "🔬",
+        "banner": "public literature only, no PHI · answers are drafts for clinician review",
+        "placeholder": "Ask a clinical question…",
+        "table": "articles",
+        "unit": "articles",
+        "citation": "PMID",
+        "retrieval_ready": True,
+    },
+    "local_docs": {
+        "label": "Local Docs RAG",
+        "title": "📁 Local Docs RAG — internal document assistant",
+        "icon": "📁",
+        "banner": "⚠️ local documents (NOT public literature) — may contain sensitive material; confirm PHI handling",
+        "placeholder": "Ask about the local documents…",
+        "table": LOCAL_DOCS_TABLE,
+        "unit": "chunks",
+        "citation": "source file",
+        "retrieval_ready": False,
+    },
+}
+
+# Active corpus, selectable at startup via the CORPUS flag (e.g. CORPUS=local_docs).
+CORPUS = os.environ.get("CORPUS", "pubmed")
+
+
+def corpus_profile(name: str | None = None) -> dict:
+    """Profile for the named corpus (default: the active CORPUS)."""
+    return CORPORA.get(name or CORPUS, CORPORA["pubmed"])
