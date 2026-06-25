@@ -81,6 +81,8 @@ def cmd_agent(args) -> None:
 
 
 def cmd_ingest(args) -> None:
+    from collections import Counter
+
     from . import chunk as chunk_mod
     from . import phi
     from .sources import localfiles
@@ -94,27 +96,30 @@ def cmd_ingest(args) -> None:
         sig = config.embedding_signature()
     else:
         why = "--dry-run" if args.dry_run else "ALLOW_EMBEDDING not set"
-        print(f"Embedding gate: OFF ({why}) -- analysis only. NO OpenAI calls, nothing stored.\n")
+        print(f"Embedding gate: OFF ({why}) -- analysis only. NO OpenAI calls, nothing stored.")
 
-    n_docs = n_chunks = n_tokens = n_skip = 0
-    phi_totals: dict[str, int] = {}
+    n_docs = n_chunks = n_tokens = 0
+    phi_totals: Counter = Counter()
+    skips: Counter = Counter()            # by reason, never filenames (compliance-safe)
+    by_juris: dict[str, list] = {}        # jurisdiction -> [docs, chunks, tokens]
 
-    def on_skip(rel, reason):
-        nonlocal n_skip
-        n_skip += 1
-        if n_skip <= 15:
-            print(f"  skip: {rel} -- {reason}")
+    def on_skip(_rel, reason):
+        skips["extract error" if reason.startswith("extract error") else reason] += 1
 
     for doc in localfiles.iter_documents(root, on_skip=on_skip):
         chunks = chunk_mod.chunk_text(doc.text)
         if not chunks:
-            on_skip(doc.doc_id, "no chunks after splitting")
+            skips["no chunks after splitting"] += 1
             continue
+        toks = sum(c.n_tokens for c in chunks)
         n_docs += 1
         n_chunks += len(chunks)
-        n_tokens += sum(c.n_tokens for c in chunks)
-        for name, cnt in phi.screen(doc.text).items():
-            phi_totals[name] = phi_totals.get(name, 0) + cnt
+        n_tokens += toks
+        agg = by_juris.setdefault(doc.category or "(root)", [0, 0, 0])
+        agg[0] += 1
+        agg[1] += len(chunks)
+        agg[2] += toks
+        phi_totals.update(phi.screen(doc.text))
         if enabled:
             vectors = embed.embed_texts([c.text for c in chunks])
             rows = [
@@ -127,8 +132,14 @@ def cmd_ingest(args) -> None:
             ]
             db.upsert_local_chunks(rows)
 
-    print(f"\n{n_docs} documents -> {n_chunks} chunks, ~{n_tokens:,} tokens "
-          f"({n_skip} files skipped)")
+    print("\nBy jurisdiction (docs / chunks / tokens):")
+    for juris in sorted(by_juris):
+        d, c, t = by_juris[juris]
+        print(f"  {juris:12} {d:5} docs  {c:7} chunks  {t:>12,} tokens")
+    print(f"\nTotal: {n_docs} documents -> {n_chunks} chunks, ~{n_tokens:,} tokens")
+    if skips:
+        print("Skipped (by reason, no filenames): "
+              + ", ".join(f"{r} x{n}" for r, n in skips.most_common()))
     print(f"Estimated one-time embedding cost (text-embedding-3-small @ $0.02/1M): "
           f"${n_tokens / 1_000_000 * 0.02:.4f}")
     if phi_totals:
@@ -141,7 +152,42 @@ def cmd_ingest(args) -> None:
         print(f"\nStored {n_chunks} chunks in '{config.LOCAL_DOCS_TABLE}'.")
     else:
         print("\nGate OFF: nothing was embedded, sent to OpenAI, or stored. "
-              "After clearing PHI, re-run with ALLOW_EMBEDDING=1 to embed + store.")
+              "Set ALLOW_EMBEDDING=1 (after review) to embed + store.")
+
+
+def cmd_inventory(args) -> None:
+    """Extensions + counts only -- no filenames or content, no API. Safe to run
+    on a sensitive corpus to see what's there before any extraction."""
+    from collections import Counter
+    from pathlib import Path
+
+    from .sources import localfiles
+
+    root = Path(args.path or config.LOCAL_DOCS_DIR)
+    if not root.exists():
+        raise SystemExit(f"Not found: {root}")
+    exts: Counter = Counter()
+    by_juris: Counter = Counter()
+    parseable = 0
+    for p in root.rglob("*"):
+        if not p.is_file():
+            continue
+        ext = p.suffix.lower() or "(no-ext)"
+        exts[ext] += 1
+        rel = p.relative_to(root)
+        by_juris[rel.parts[0] if len(rel.parts) > 1 else "(root)"] += 1
+        if p.suffix.lower() in localfiles.SUPPORTED:
+            parseable += 1
+    print(f"Inventory of {root}  (extensions + counts only -- no filenames/content)\n")
+    print("Per-jurisdiction file counts:")
+    for juris, n in sorted(by_juris.items()):
+        print(f"  {juris}: {n}")
+    print("\nExtension histogram  (* = parsed as text):")
+    for ext, n in exts.most_common():
+        print(f"  {'*' if ext in localfiles.SUPPORTED else ' '} {ext:10} {n}")
+    total = sum(exts.values())
+    print(f"\n{total} files total; {parseable} parseable as text "
+          f"({total - parseable} skipped as media/other).")
 
 
 def cmd_stats(args) -> None:
@@ -209,6 +255,13 @@ def main() -> None:
         help="force analysis only, even if ALLOW_EMBEDDING is set",
     )
     ip.set_defaults(fn=cmd_ingest)
+
+    vp = sub.add_parser(
+        "inventory",
+        help="list file extensions + counts in the corpus dir (no content, no API)",
+    )
+    vp.add_argument("--path", help=f"corpus directory (default {config.LOCAL_DOCS_DIR})")
+    vp.set_defaults(fn=cmd_inventory)
 
     sub.add_parser("stats", help="corpus summary").set_defaults(fn=cmd_stats)
 

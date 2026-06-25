@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 TEXT_EXT = {".txt", ".md"}
-SUPPORTED = {".pdf", ".docx", ".pptx", *TEXT_EXT}
+SUPPORTED = {".pdf", ".docx", ".pptx", ".xlsx", *TEXT_EXT}
 
 
 @dataclass
@@ -71,6 +71,8 @@ def _extract(path: Path, ext: str) -> str:
         return _docx(path)
     if ext == ".pptx":
         return _pptx(path)
+    if ext == ".xlsx":
+        return _xlsx(path)
     return ""
 
 
@@ -108,6 +110,25 @@ def _pptx(path: Path) -> str:
         if texts:
             parts.append(f"[Slide {i}]\n" + "\n".join(texts))
     return "\n\n".join(parts)
+
+
+def _xlsx(path: Path) -> str:
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        parts = []
+        for ws in wb.worksheets:
+            rows = []
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                if cells:
+                    rows.append(" | ".join(cells))
+            if rows:
+                parts.append(f"[Sheet: {ws.title}]\n" + "\n".join(rows))
+        return "\n\n".join(parts)
+    finally:
+        wb.close()
 
 
 _WS = re.compile(r"[ \t]+")
