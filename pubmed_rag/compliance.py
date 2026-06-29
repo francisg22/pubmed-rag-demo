@@ -169,3 +169,73 @@ def ask(question: str, k: int = 6, mode: str = "hybrid", jurisdiction: str | Non
     ]
     resp = OpenAI().chat.completions.create(model=config.CHAT_MODEL, messages=messages)
     return resp.choices[0].message.content
+
+
+# --- Agentic tool surface (used by agent.py when corpus="compliance") ---
+SNIPPET_CHARS = 320
+
+
+def tool_search(query, k=6, jurisdiction=None):
+    try:
+        chunks = search(query, k=int(k or 6), mode="hybrid", jurisdiction=jurisdiction)
+    except SystemExit as e:  # corpus not ingested / signature mismatch -> tell the model
+        return {"error": str(e)}
+    return [
+        {
+            "doc_id": c.doc_id,
+            "title": c.title,
+            "jurisdiction": c.jurisdiction,
+            "score": round(c.score, 4),
+            "snippet": (c.text or "")[:SNIPPET_CHARS],
+        }
+        for c in chunks
+    ]
+
+
+def tool_get_document(doc_id):
+    text = db.local_doc_text(str(doc_id))
+    if not text:
+        return {"doc_id": doc_id, "error": "no such document"}
+    return {"doc_id": doc_id, "text": text[:16000]}
+
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_documents",
+            "description": (
+                "Search the internal compliance corpus (US / UK / Australia policies and "
+                "procedures). Optionally restrict to one jurisdiction. Returns matching "
+                "passages with their source doc_id and jurisdiction. Call again with refined "
+                "terms for multi-part questions; if results don't address the question, say so."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "k": {"type": "integer", "description": "number of passages (default 6)"},
+                    "jurisdiction": {"type": "string", "enum": ["US", "UK", "Australia"]},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_document",
+            "description": (
+                "Fetch the full text of one compliance document by its doc_id (from a "
+                "search result) to read or quote it precisely."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"doc_id": {"type": "string"}},
+                "required": ["doc_id"],
+            },
+        },
+    },
+]
+
+IMPLS = {"search_documents": tool_search, "get_document": tool_get_document}

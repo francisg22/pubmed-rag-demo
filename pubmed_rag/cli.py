@@ -81,11 +81,7 @@ def cmd_ask(args) -> None:
 
 
 def cmd_agent(args) -> None:
-    if config.CORPUS == "compliance":
-        raise SystemExit(
-            "Agent mode isn't wired for the compliance corpus yet -- "
-            "use `python -m pubmed_rag ask --corpus compliance ...`."
-        )
+    corpus = args.corpus or config.CORPUS
 
     def on_event(ev) -> None:
         if ev["type"] == "tool_call":
@@ -94,15 +90,17 @@ def cmd_agent(args) -> None:
         elif ev["type"] == "tool_result":
             print(f"     {ev['result']}")
 
-    print("Agent working (tool calls shown live):\n")
+    print(f"Agent working on the '{corpus}' corpus (tool calls shown live):\n")
     result = agent_mod.run_agent(
-        args.question, k=args.k, max_steps=args.max_steps, on_event=on_event
+        args.question, k=args.k, max_steps=args.max_steps, on_event=on_event, corpus=corpus
     )
     print(f"\n--- answer ({result['steps']} step(s)) ---\n")
     print(result["answer"])
 
 
 def cmd_ingest(args) -> None:
+    import hashlib
+    import sys
     from collections import Counter
 
     from . import chunk as chunk_mod
@@ -116,11 +114,13 @@ def cmd_ingest(args) -> None:
         print("Embedding gate: ON  -- will embed via OpenAI and store in pgvector.")
         db.init_local_docs()
         sig = config.embedding_signature()
+        existing = db.local_doc_hashes()  # incremental: skip files whose content is unchanged
     else:
         why = "--dry-run" if args.dry_run else "ALLOW_EMBEDDING not set"
         print(f"Embedding gate: OFF ({why}) -- analysis only. NO OpenAI calls, nothing stored.")
+        existing = {}
 
-    n_docs = n_chunks = n_tokens = 0
+    n_docs = n_chunks = n_tokens = n_unchanged = 0
     phi_totals: Counter = Counter()
     skips: Counter = Counter()            # by reason, never filenames (compliance-safe)
     by_juris: dict[str, list] = {}        # jurisdiction -> [docs, chunks, tokens]
@@ -128,21 +128,44 @@ def cmd_ingest(args) -> None:
     def on_skip(_rel, reason):
         skips["extract error" if reason.startswith("extract error") else reason] += 1
 
-    for doc in localfiles.iter_documents(root, on_skip=on_skip):
+    files = list(localfiles.iter_files(root, on_skip))  # discovery only; counts unsupported skips
+    total = len(files)
+
+    def progress(i):
+        tail = f", {n_unchanged} unchanged" if n_unchanged else ""
+        sys.stdout.write(f"\r  [{i}/{total}] {n_chunks} chunks{tail}        ")
+        sys.stdout.flush()
+
+    for i, (rel, path, category) in enumerate(files, 1):
+        sha = None
+        if enabled:
+            sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            if existing.get(rel) == sha:        # unchanged since last ingest -> skip (no re-embed)
+                n_unchanged += 1
+                progress(i)
+                continue
+        doc = localfiles.extract_document(rel, path, category, on_skip)
+        if doc is None:
+            progress(i)
+            continue
         chunks = chunk_mod.chunk_text(doc.text)
         if not chunks:
             skips["no chunks after splitting"] += 1
+            progress(i)
             continue
         toks = sum(c.n_tokens for c in chunks)
         n_docs += 1
         n_chunks += len(chunks)
         n_tokens += toks
-        agg = by_juris.setdefault(doc.category or "(root)", [0, 0, 0])
+        agg = by_juris.setdefault(category or "(root)", [0, 0, 0])
         agg[0] += 1
         agg[1] += len(chunks)
         agg[2] += toks
         phi_totals.update(phi.screen(doc.text))
         if enabled:
+            doc.metadata["sha256"] = sha
+            if rel in existing:               # changed file -> drop old chunks before re-embedding
+                db.delete_local_doc(rel)
             vectors = embed.embed_texts([c.text for c in chunks])
             rows = [
                 (
@@ -153,12 +176,17 @@ def cmd_ingest(args) -> None:
                 for c, v in zip(chunks, vectors)
             ]
             db.upsert_local_chunks(rows)
+        progress(i)
+    if total:
+        sys.stdout.write("\n")
 
     print("\nBy jurisdiction (docs / chunks / tokens):")
     for juris in sorted(by_juris):
         d, c, t = by_juris[juris]
         print(f"  {juris:12} {d:5} docs  {c:7} chunks  {t:>12,} tokens")
     print(f"\nTotal: {n_docs} documents -> {n_chunks} chunks, ~{n_tokens:,} tokens")
+    if n_unchanged:
+        print(f"Unchanged (already embedded, skipped): {n_unchanged}")
     if skips:
         print("Skipped (by reason, no filenames): "
               + ", ".join(f"{r} x{n}" for r, n in skips.most_common()))
@@ -268,6 +296,7 @@ def main() -> None:
     gp.add_argument("question")
     gp.add_argument("--k", type=int, default=6, help="results per search (default 6)")
     gp.add_argument("--max-steps", type=int, default=6, help="max tool-calling rounds (default 6)")
+    gp.add_argument("--corpus", choices=["pubmed", "compliance"], help="default: $CORPUS or pubmed")
     gp.set_defaults(fn=cmd_agent)
 
     ip = sub.add_parser(

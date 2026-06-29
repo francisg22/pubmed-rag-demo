@@ -154,11 +154,16 @@ if not prof["retrieval_ready"]:
 # ----- sidebar (part 2): controls (only for a retrieval-ready corpus) -----
 is_compliance = corpus_key == "compliance"
 jurisdiction = None
+c_agentic = False
+c_max_steps = 6
 with st.sidebar:
     if is_compliance:
+        c_agentic = st.radio("Engine", ["One-shot RAG", "Agentic (tool-calling)"]).startswith("Agentic")
         juris = st.selectbox("Jurisdiction", ["All", "US", "UK", "Australia"])
         jurisdiction = None if juris == "All" else juris
         k = st.slider("Sources (k)", 3, 12, 6)
+        if c_agentic:
+            c_max_steps = st.slider("Max tool-call rounds", 2, 10, 6)
         agentic = False
     else:
         engine = st.radio("Engine", ["Agentic (model drives retrieval)", "One-shot RAG"])
@@ -202,7 +207,28 @@ if q:
     with st.chat_message("user"):
         st.markdown(q)
     with st.chat_message("assistant"):
-        if is_compliance:
+        if is_compliance and c_agentic:
+            status = st.status("Working over the compliance corpus…", expanded=True)
+
+            def on_event(ev):
+                if ev["type"] == "tool_call":
+                    a = ", ".join(f"{key}={val!r}" for key, val in ev["args"].items())
+                    status.write(f"→ `{ev['name']}`({a})")
+                else:
+                    status.write(f"   ↳ {ev['result']}")
+
+            q_agent = q if not jurisdiction else f"{q}\n\n(Restrict to the {jurisdiction} jurisdiction.)"
+            result = agent_mod.run_agent(
+                q_agent, k=k, max_steps=c_max_steps, on_event=on_event,
+                history=prior, corpus="compliance",
+            )
+            status.update(label=f"Done — {result['steps']} step(s)", state="complete")
+            st.markdown(result["answer"])
+            render_trace(result["trace"])
+            st.session_state.history.append(
+                {"question": q, "answer": result["answer"], "trace": result["trace"]}
+            )
+        elif is_compliance:
             chunks = []
             try:
                 with st.spinner("Searching compliance documents…"):

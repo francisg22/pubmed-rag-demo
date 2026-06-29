@@ -26,11 +26,10 @@ class Document:
     metadata: dict = field(default_factory=dict)
 
 
-def iter_documents(root, on_skip=None):
-    """Yield a Document per supported file under `root` that has extractable text.
-
-    on_skip(rel_path, reason) is called for unsupported or empty files.
-    """
+def iter_files(root, on_skip=None):
+    """Yield (rel_path, Path, category) for every SUPPORTED file under `root`,
+    WITHOUT extracting. Cheap -- used to hash files for incremental ingest and to
+    count work for a progress bar before the slow extraction step."""
     root = Path(root)
     if not root.exists():
         raise SystemExit(f"Corpus directory not found: {root}")
@@ -41,25 +40,39 @@ def iter_documents(root, on_skip=None):
             if on_skip:
                 on_skip(rel, f"unsupported type {ext or '(none)'}")
             continue
-        try:
-            text = _clean(_extract(path, ext))
-        except Exception as e:  # a malformed file shouldn't abort the whole run
-            if on_skip:
-                on_skip(rel, f"extract error: {e}")
-            continue
-        if not text:
-            if on_skip:
-                on_skip(rel, "no extractable text (image-only?)")
-            continue
         category = rel.split("/")[0] if "/" in rel.replace("\\", "/") else ""
-        yield Document(
-            doc_id=rel,
-            title=path.stem,
-            text=text,
-            source_path=str(path),
-            category=category,
-            metadata={"ext": ext, "chars": len(text)},
-        )
+        yield rel, path, category
+
+
+def extract_document(rel, path, category, on_skip=None):
+    """Extract one file to a Document, or None (empty / malformed -> on_skip)."""
+    ext = path.suffix.lower()
+    try:
+        text = _clean(_extract(path, ext))
+    except Exception as e:  # a malformed file shouldn't abort the whole run
+        if on_skip:
+            on_skip(rel, f"extract error: {e}")
+        return None
+    if not text:
+        if on_skip:
+            on_skip(rel, "no extractable text (image-only?)")
+        return None
+    return Document(
+        doc_id=rel,
+        title=path.stem,
+        text=text,
+        source_path=str(path),
+        category=category,
+        metadata={"ext": ext, "chars": len(text)},
+    )
+
+
+def iter_documents(root, on_skip=None):
+    """Yield a Document per supported file with extractable text (discovery + extraction)."""
+    for rel, path, category in iter_files(root, on_skip):
+        doc = extract_document(rel, path, category, on_skip)
+        if doc:
+            yield doc
 
 
 def _extract(path: Path, ext: str) -> str:
@@ -77,6 +90,9 @@ def _extract(path: Path, ext: str) -> str:
 
 
 def _pdf(path: Path) -> str:
+    import logging
+
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)  # silence FontBBox noise
     import pdfplumber
 
     with pdfplumber.open(path) as pdf:

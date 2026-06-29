@@ -124,7 +124,18 @@ def _do_full_text(pmid):
 _IMPLS = {"search_literature": _do_search, "get_full_text": _do_full_text}
 
 
-def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None, history=None) -> dict:
+def _toolset(corpus: str):
+    """(system_prompt, tools, impls, search_tool_name, id_key) for a corpus."""
+    if corpus == "compliance":
+        from . import compliance
+
+        prompt = config.corpus_profile("compliance").get("system_prompt") or config.COMPLIANCE_SYSTEM_PROMPT
+        return prompt, compliance.TOOLS, compliance.IMPLS, "search_documents", "doc_id"
+    return AGENT_SYSTEM_PROMPT, TOOLS, _IMPLS, "search_literature", "pmid"
+
+
+def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None,
+              history=None, corpus: str = "pubmed") -> dict:
     """Drive the tool-calling loop until the model answers.
 
     Returns {"answer": str, "trace": [event...], "steps": int}. `on_event(event)`
@@ -142,13 +153,14 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None, hist
     from openai import OpenAI
 
     client = OpenAI()
+    system_prompt, tools, impls, search_tool, id_key = _toolset(corpus)
     messages = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         *history_messages(history),
         {"role": "user", "content": question},
     ]
     trace: list[dict] = []
-    seen_pmids: set[str] = set()  # PMIDs from earlier searches (diminishing-returns guard)
+    seen: set[str] = set()  # ids from earlier searches (diminishing-returns guard)
 
     def emit(event):
         trace.append(event)
@@ -159,14 +171,14 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None, hist
         # Force a search on the first turn so the model can't answer from its own
         # memory without consulting the corpus; let it choose freely after that.
         tool_choice = (
-            {"type": "function", "function": {"name": "search_literature"}}
+            {"type": "function", "function": {"name": search_tool}}
             if step == 0
             else "auto"
         )
         resp = client.chat.completions.create(
             model=config.CHAT_MODEL,
             messages=messages,
-            tools=TOOLS,
+            tools=tools,
             tool_choice=tool_choice,
         )
         msg = resp.choices[0].message
@@ -182,7 +194,7 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None, hist
             except json.JSONDecodeError:
                 args = {}
             emit({"type": "tool_call", "name": name, "args": args})
-            impl = _IMPLS.get(name)
+            impl = impls.get(name)
             if impl is None:
                 result = {"error": f"unknown tool {name}"}
             else:
@@ -193,21 +205,19 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None, hist
             # Diminishing-returns guard: when a search surfaces nothing the model
             # hasn't already seen, replace the (redundant) result with a nudge to
             # stop rephrasing and either read a hit or abstain.
-            if name == "search_literature" and isinstance(result, list):
-                fresh = [r for r in result if r["pmid"] not in seen_pmids]
-                seen_pmids.update(r["pmid"] for r in result)
+            if name == search_tool and isinstance(result, list):
+                fresh = [r for r in result if r.get(id_key) not in seen]
+                seen.update(r.get(id_key) for r in result)
                 if result and not fresh:
                     result = {
                         "note": (
                             "No new results -- every hit here was already returned by an "
-                            "earlier search (PMIDs already seen: "
-                            + ", ".join(sorted(seen_pmids))
-                            + "). Rephrasing is not surfacing new evidence. Read one of "
-                            "these with get_full_text, or if none address the question, "
-                            "answer now / state that the corpus lacks sufficient evidence. "
-                            "Do NOT search again with similar terms."
+                            "earlier search. Rephrasing is not surfacing new evidence. Read "
+                            "one of these in full, or if none address the question, answer "
+                            "now / state that the corpus lacks sufficient evidence. Do NOT "
+                            "search again with similar terms."
                         ),
-                        "seen_pmids": sorted(seen_pmids),
+                        "seen": sorted(x for x in seen if x),
                     }
             emit({"type": "tool_result", "name": name, "result": _summarize(name, result)})
             messages.append(
@@ -232,20 +242,21 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None, hist
     # `tools` must still be passed for tool_choice="none" to be accepted; "none"
     # tells the model it may not call them and must answer now.
     final = client.chat.completions.create(
-        model=config.CHAT_MODEL, messages=messages, tools=TOOLS, tool_choice="none"
+        model=config.CHAT_MODEL, messages=messages, tools=tools, tool_choice="none"
     )
     return {"answer": final.choices[0].message.content, "trace": trace, "steps": max_steps}
 
 
 def _summarize(name: str, result) -> str:
-    """A compact, human-readable summary of a tool result for the trace/GUI."""
-    if name == "search_literature" and isinstance(result, list):
-        return f"{len(result)} hits: " + ", ".join(f"PMID {r['pmid']}" for r in result[:6])
-    if name == "search_literature" and isinstance(result, dict) and "note" in result:
-        return f"0 new hits ({len(result['seen_pmids'])} already seen) -- nudged to stop searching"
-    if name == "get_full_text" and isinstance(result, dict):
-        return (
-            f"PMID {result.get('pmid')} -> {result.get('source')} "
-            f"({len(result.get('text', ''))} chars)"
-        )
+    """A compact, human-readable summary of a tool result for the trace/GUI
+    (works for both the pubmed and compliance toolsets)."""
+    if isinstance(result, list):
+        ids = [str(r.get("pmid") or r.get("doc_id") or "?") for r in result[:6]]
+        return f"{len(result)} hits: " + ", ".join(ids)
+    if isinstance(result, dict) and "note" in result:
+        return f"0 new hits ({len(result.get('seen', []))} already seen) -- nudged to stop searching"
+    if isinstance(result, dict) and ("source" in result or "text" in result):
+        ident = result.get("pmid") or result.get("doc_id") or "?"
+        src = result.get("source") or ("full text" if result.get("text") else "?")
+        return f"{ident} -> {src} ({len(result.get('text', ''))} chars)"
     return str(result)[:200]

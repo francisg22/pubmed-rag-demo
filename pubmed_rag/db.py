@@ -159,3 +159,30 @@ def upsert_local_chunks(rows: list[tuple]) -> int:
     with connect() as conn, conn.cursor() as cur:
         cur.executemany(sql, rows)
     return len(rows)
+
+
+def local_doc_hashes() -> dict[str, str]:
+    """{doc_id: sha256} for already-stored docs -- lets `ingest` skip unchanged files."""
+    table = config.LOCAL_DOCS_TABLE
+    with connect() as conn:
+        if conn.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is None:
+            return {}
+        rows = conn.execute(
+            f"SELECT DISTINCT doc_id, metadata->>'sha256' FROM {table}"
+        ).fetchall()
+    return {doc_id: h for doc_id, h in rows if h}
+
+
+def delete_local_doc(doc_id: str) -> None:
+    with connect() as conn:
+        conn.execute(f"DELETE FROM {config.LOCAL_DOCS_TABLE} WHERE doc_id = %s", (doc_id,))
+
+
+def local_doc_text(doc_id: str) -> str:
+    """Full text of one document = its chunks in order (for the agent's get_document)."""
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT text FROM {config.LOCAL_DOCS_TABLE} WHERE doc_id = %s ORDER BY ordinal",
+            (doc_id,),
+        ).fetchall()
+    return "\n\n".join(r[0] for r in rows)
