@@ -4,6 +4,7 @@ import json
 
 from . import agent as agent_mod
 from . import ask as ask_mod
+from . import compliance as compliance_mod
 from . import config, db, embed, fetch
 from . import search as search_mod
 
@@ -49,6 +50,18 @@ def cmd_load(args) -> None:
 
 
 def cmd_search(args) -> None:
+    if (args.corpus or config.CORPUS) == "compliance":
+        hits = compliance_mod.search(
+            args.query, k=args.k, mode=args.mode, jurisdiction=args.jurisdiction
+        )
+        if not hits:
+            print("No results -- is the compliance corpus ingested?")
+            return
+        for i, h in enumerate(hits, 1):
+            print(f"{i:2}. [{h.score:.4f}] {h.jurisdiction or '?'} | {h.doc_id} -- {h.title}")
+            if args.verbose:
+                print(f"      {h.text[:300]}...")
+        return
     hits = search_mod.search(args.query, k=args.k, mode=args.mode)
     if not hits:
         print("No results -- is the corpus loaded? (python -m pubmed_rag load --query ...)")
@@ -61,10 +74,19 @@ def cmd_search(args) -> None:
 
 
 def cmd_ask(args) -> None:
+    if (args.corpus or config.CORPUS) == "compliance":
+        print(compliance_mod.ask(args.question, k=args.k, jurisdiction=args.jurisdiction))
+        return
     print(ask_mod.ask(args.question, k=args.k, full_text=not args.abstract_only))
 
 
 def cmd_agent(args) -> None:
+    if config.CORPUS == "compliance":
+        raise SystemExit(
+            "Agent mode isn't wired for the compliance corpus yet -- "
+            "use `python -m pubmed_rag ask --corpus compliance ...`."
+        )
+
     def on_event(ev) -> None:
         if ev["type"] == "tool_call":
             shown = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
@@ -221,20 +243,24 @@ def main() -> None:
     lp.add_argument("--fresh", action="store_true", help="truncate the table first")
     lp.set_defaults(fn=cmd_load)
 
-    sp = sub.add_parser("search", help="retrieve from the local corpus")
+    sp = sub.add_parser("search", help="retrieve from a corpus (pubmed or compliance)")
     sp.add_argument("query")
     sp.add_argument("--k", type=int, default=5)
     sp.add_argument("--mode", choices=["vector", "keyword", "hybrid"], default="hybrid")
+    sp.add_argument("--corpus", choices=["pubmed", "compliance"], help="default: $CORPUS or pubmed")
+    sp.add_argument("--jurisdiction", choices=["US", "UK", "Australia"], help="compliance only")
     sp.add_argument("--verbose", "-v", action="store_true")
     sp.set_defaults(fn=cmd_search)
 
-    ap = sub.add_parser("ask", help="grounded Q&A with cited quotes (full text where available)")
+    ap = sub.add_parser("ask", help="grounded Q&A (pubmed: cited quotes; compliance: jurisdiction-scoped)")
     ap.add_argument("question")
     ap.add_argument("--k", type=int, default=5)
+    ap.add_argument("--corpus", choices=["pubmed", "compliance"], help="default: $CORPUS or pubmed")
+    ap.add_argument("--jurisdiction", choices=["US", "UK", "Australia"], help="compliance only")
     ap.add_argument(
         "--abstract-only",
         action="store_true",
-        help="skip open-access full-text fetch; ground answers on abstracts only",
+        help="pubmed only: skip open-access full-text fetch",
     )
     ap.set_defaults(fn=cmd_ask)
 

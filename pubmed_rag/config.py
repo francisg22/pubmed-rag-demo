@@ -83,7 +83,7 @@ CORPORA = {
         "citation": "PMID",
         "retrieval_ready": True,
     },
-    "local_docs": {
+    "compliance": {
         "label": "Compliance Assistant",
         "title": "🏛️ Compliance Assistant — US / UK / Australia policies",
         "icon": "🏛️",
@@ -92,7 +92,7 @@ CORPORA = {
         "table": LOCAL_DOCS_TABLE,
         "unit": "chunks",
         "citation": "source file + jurisdiction",
-        "retrieval_ready": False,
+        "retrieval_ready": True,
         "system_prompt": COMPLIANCE_SYSTEM_PROMPT,
     },
 }

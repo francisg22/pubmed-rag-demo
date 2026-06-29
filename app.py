@@ -14,6 +14,7 @@ import streamlit as st
 
 from pubmed_rag import agent as agent_mod
 from pubmed_rag import ask as ask_mod
+from pubmed_rag import compliance as compliance_mod
 from pubmed_rag import config, db, fetch
 from pubmed_rag.search import search
 
@@ -46,6 +47,16 @@ def render_sources(sources):
                 f"{badge} · score {s['score']:.4f}"
             )
             st.caption(s["snippet"])
+
+
+def render_compliance_sources(chunks):
+    with st.expander(f"📚 Sources used ({len(chunks)})"):
+        for c in chunks:
+            st.markdown(
+                f"**{c.title or c.doc_id}** — *{c.jurisdiction or 'jurisdiction unknown'}*  \n"
+                f"`{c.doc_id}` · score {c.score:.4f}"
+            )
+            st.caption((c.text or "")[:SNIPPET])
 
 
 def render_trace(trace):
@@ -140,18 +151,26 @@ if not prof["retrieval_ready"]:
     )
     st.stop()
 
-# ----- sidebar (part 2): engine controls (only for a retrieval-ready corpus) -----
+# ----- sidebar (part 2): controls (only for a retrieval-ready corpus) -----
+is_compliance = corpus_key == "compliance"
+jurisdiction = None
 with st.sidebar:
-    engine = st.radio("Engine", ["Agentic (model drives retrieval)", "One-shot RAG"])
-    agentic = engine.startswith("Agentic")
-    k = st.slider("Sources (k)", 3, 12, 6)
-    if agentic:
-        max_steps = st.slider("Max tool-call rounds", 2, 10, 6)
-        mode, abstract_only = "hybrid", False
+    if is_compliance:
+        juris = st.selectbox("Jurisdiction", ["All", "US", "UK", "Australia"])
+        jurisdiction = None if juris == "All" else juris
+        k = st.slider("Sources (k)", 3, 12, 6)
+        agentic = False
     else:
-        mode = st.selectbox("Retrieval mode", ["hybrid", "vector", "keyword"])
-        abstract_only = st.checkbox("Abstract-only (skip full-text fetch)", value=False)
-        max_steps = None
+        engine = st.radio("Engine", ["Agentic (model drives retrieval)", "One-shot RAG"])
+        agentic = engine.startswith("Agentic")
+        k = st.slider("Sources (k)", 3, 12, 6)
+        if agentic:
+            max_steps = st.slider("Max tool-call rounds", 2, 10, 6)
+            mode, abstract_only = "hybrid", False
+        else:
+            mode = st.selectbox("Retrieval mode", ["hybrid", "vector", "keyword"])
+            abstract_only = st.checkbox("Abstract-only (skip full-text fetch)", value=False)
+            max_steps = None
     st.caption(f"Chat model: `{config.CHAT_MODEL}`")
     st.caption(
         f"🧠 Memory: last {ask_mod.HISTORY_TURNS} turns carried as dialogue; "
@@ -183,7 +202,44 @@ if q:
     with st.chat_message("user"):
         st.markdown(q)
     with st.chat_message("assistant"):
-        if agentic:
+        if is_compliance:
+            chunks = []
+            try:
+                with st.spinner("Searching compliance documents…"):
+                    chunks = compliance_mod.search(q, k=k, mode="hybrid", jurisdiction=jurisdiction)
+                    if not chunks:
+                        answer = "No matching passages in the compliance corpus" + (
+                            f" for {jurisdiction}." if jurisdiction else "."
+                        )
+                    else:
+                        user_msg = (
+                            f"Compliance documents:\n\n{compliance_mod.build_context(chunks)}"
+                            f"\n\nQuestion: {q}"
+                        )
+                        prompt = prof.get("system_prompt") or config.COMPLIANCE_SYSTEM_PROMPT
+                        if config.OPENAI_API_KEY:
+                            from openai import OpenAI
+
+                            msgs = [
+                                {"role": "system", "content": prompt},
+                                *ask_mod.history_messages(prior),
+                                {"role": "user", "content": user_msg},
+                            ]
+                            answer = (
+                                OpenAI()
+                                .chat.completions.create(model=config.CHAT_MODEL, messages=msgs)
+                                .choices[0]
+                                .message.content
+                            )
+                        else:
+                            answer = "[no OPENAI_API_KEY — showing the assembled grounded prompt]\n\n" + user_msg
+            except SystemExit as e:  # corpus not ingested / signature mismatch
+                answer, chunks = str(e), []
+            st.markdown(answer)
+            if chunks:
+                render_compliance_sources(chunks)
+            st.session_state.history.append({"question": q, "answer": answer})
+        elif agentic:
             status = st.status("Searching the literature…", expanded=True)
 
             def on_event(ev):
