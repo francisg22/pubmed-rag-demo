@@ -118,6 +118,25 @@ used** panel (with full-text-vs-abstract badges), and — in agentic mode — a 
 **"what the agent did"** trace of every search and full-text fetch. That trace is
 the most compelling thing to show: it makes model-driven retrieval visible.
 
+### Patient-education modes (compliance assistant)
+
+The compliance assistant adds two grounded patient-education engines, selectable in
+the GUI (or via `python -m pubmed_rag agent --engine general|article`):
+
+- **General assistant** — grounded Q&A for basic and *tangential* patient questions.
+- **Article writer** — drafts a structured, plain-language patient-information
+  article (fixed template: *What it is · Why · Benefits · Risks · What to expect ·
+  Recovery · When to get help · Sources*), shown in a tabbed card (Article / Sources
+  / How it was built) with a Markdown download.
+
+Both stay **strictly grounded** — no model parametric knowledge — and ground across
+the compliance corpus plus an **optional general-knowledge corpus**. That second
+corpus is additive and off by default: tick **Include general-knowledge corpus**
+(or pass `--include-general`), and it only takes effect once ingested
+(`python -m pubmed_rag ingest --corpus general`; see `data/general_docs/README.md`).
+Sources are labelled by corpus so official policy is never confused with general
+info, and free-text input is PHI-screened before anything is sent.
+
 **Conversation memory:** both modes accept a `history` of prior turns, so
 follow-ups work ("…and in *severe* CKD?" remembers the subject). Only the
 dialogue text is carried — the retrieved **sources are re-fetched fresh every

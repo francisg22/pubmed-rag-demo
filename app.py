@@ -4,9 +4,14 @@ A thin presentation layer over the existing package:
   - One-shot RAG  -> pubmed_rag.ask  (fixed hybrid retrieval, then answer)
   - Agentic RAG   -> pubmed_rag.agent (the model drives retrieval via tools)
 
-The active corpus (PubMed vs the local-files corpus) drives the title, banner,
-and stats. Retrieval is currently wired for PubMed only; other corpora show an
-ingestion-only notice rather than silently answering from the wrong data.
+The compliance assistant additionally offers two patient-education modes, grounded
+across the compliance corpus and (optionally, via a toggle) the general-knowledge
+corpus:
+  - General assistant -> pubmed_rag.agent.run_general (grounded Q&A, cited)
+  - Article writer     -> pubmed_rag.agent.write_article (structured, cited draft)
+
+The active corpus drives the title, banner, and stats. Corpora whose retrieval
+isn't wired show an ingestion-only notice rather than answering from the wrong data.
 
 Run with:  streamlit run app.py     (CORPUS=local_docs streamlit run app.py to start on that corpus)
 """
@@ -15,7 +20,7 @@ import streamlit as st
 from pubmed_rag import agent as agent_mod
 from pubmed_rag import ask as ask_mod
 from pubmed_rag import compliance as compliance_mod
-from pubmed_rag import config, db, fetch
+from pubmed_rag import config, db, fetch, phi
 from pubmed_rag.search import search
 
 # Browser-tab title/icon are fixed at launch from the CORPUS flag; the in-page
@@ -69,6 +74,63 @@ def render_trace(trace):
                 st.caption(f"   ↳ {ev['result']}")
 
 
+def collect_sources(trace):
+    """Pull the retrieved search hits out of an agent trace (raw list results),
+    deduped by (corpus, doc_id), keeping the best score. Powers a real sources
+    panel for the general/article modes."""
+    best = {}
+    for ev in trace or []:
+        if ev.get("type") != "tool_result" or not isinstance(ev.get("raw"), list):
+            continue
+        for r in ev["raw"]:
+            if not isinstance(r, dict) or "doc_id" not in r:
+                continue
+            key = (r.get("corpus", "?"), r["doc_id"])
+            if key not in best or (r.get("score") or 0) > (best[key].get("score") or 0):
+                best[key] = r
+    return sorted(best.values(), key=lambda r: r.get("score") or 0, reverse=True)
+
+
+def render_labeled_sources(sources):
+    """Corpus-labelled source cards (compliance = policy w/ jurisdiction; general = info)."""
+    if not sources:
+        st.caption("No sources were retrieved.")
+        return
+    for s in sources:
+        corpus = s.get("corpus", "?")
+        if corpus == "compliance":
+            tag = f"🏛️ policy · {s.get('jurisdiction') or 'jurisdiction unknown'}"
+        elif corpus == "general":
+            tag = "📖 general info" + (f" · {s['topic']}" if s.get("topic") else "")
+        else:
+            tag = corpus
+        st.markdown(
+            f"**{s.get('title') or s['doc_id']}** — *{tag}*  \n"
+            f"`{s['doc_id']}` · score {s.get('score', 0):.4f}"
+        )
+        st.caption((s.get("snippet") or "")[:SNIPPET])
+
+
+def render_article_result(result, topic):
+    """Clean, tabbed presentation of a drafted article (not a raw chat dump)."""
+    article = result.get("answer") or ""
+    sources = collect_sources(result.get("trace"))
+    tab_article, tab_sources, tab_build = st.tabs(
+        ["📄 Article", f"📚 Sources ({len(sources)})", "🔧 How it was built"]
+    )
+    with tab_article:
+        st.markdown(article)
+        fname = "article-" + "".join(
+            c if c.isalnum() else "-" for c in (topic or "draft").lower()
+        ).strip("-")[:60] + ".md"
+        st.download_button("⬇️ Download as Markdown", article, file_name=fname, mime="text/markdown")
+    with tab_sources:
+        render_labeled_sources(sources)
+    with tab_build:
+        st.caption(f"{result.get('steps', 0)} step(s).")
+        render_trace(result.get("trace") or [])
+
+
 def one_shot_answer(q, k, mode, abstract_only, history=None):
     """Single retrieval + single answer, reusing ask.py's prompt/context so the
     GUI shows the exact sources that fed the answer (no double fetch). Prior turns
@@ -113,7 +175,7 @@ def one_shot_answer(q, k, mode, abstract_only, history=None):
 # ----- sidebar (part 1): corpus selection + status (shown for every corpus) -----
 with st.sidebar:
     st.header("Settings")
-    keys = list(config.CORPORA)
+    keys = config.selectable_corpora()
     corpus_key = st.selectbox(
         "Corpus",
         keys,
@@ -154,16 +216,47 @@ if not prof["retrieval_ready"]:
 # ----- sidebar (part 2): controls (only for a retrieval-ready corpus) -----
 is_compliance = corpus_key == "compliance"
 jurisdiction = None
-c_agentic = False
+c_mode = "oneshot"          # oneshot | agentic | general | article
 c_max_steps = 6
+include_general = False
+reading_level = "Grade 6-8 (plain language)"
+gen_ready = False
 with st.sidebar:
     if is_compliance:
-        c_agentic = st.radio("Engine", ["One-shot RAG", "Agentic (tool-calling)"]).startswith("Agentic")
-        juris = st.selectbox("Jurisdiction", ["All", "US", "UK", "Australia"])
+        try:
+            gen_ready = corpus_info(config.GENERAL_DOCS_TABLE) is not None
+        except Exception:
+            gen_ready = False
+        c_mode = {
+            "One-shot RAG": "oneshot",
+            "Agentic (tool-calling)": "agentic",
+            "General assistant": "general",
+            "Article writer": "article",
+        }[st.radio(
+            "Engine",
+            ["One-shot RAG", "Agentic (tool-calling)", "General assistant", "Article writer"],
+            help="General assistant + Article writer are grounded across the compliance "
+                 "corpus and (optionally) the general-knowledge corpus.",
+        )]
+        juris = st.selectbox("Jurisdiction (policy scope)", ["All", "US", "UK", "Australia"])
         jurisdiction = None if juris == "All" else juris
         k = st.slider("Sources (k)", 3, 12, 6)
-        if c_agentic:
-            c_max_steps = st.slider("Max tool-call rounds", 2, 10, 6)
+        if c_mode != "oneshot":
+            c_max_steps = st.slider("Max tool-call rounds", 2, 12, 8 if c_mode == "article" else 6)
+        if c_mode in ("general", "article"):
+            include_general = st.checkbox(
+                "Include general-knowledge corpus",
+                value=gen_ready,
+                disabled=not gen_ready,
+                help="Optional additive grounding source. Ingest data/general_docs "
+                     "(`python -m pubmed_rag ingest --corpus general`) to enable.",
+            )
+            if not gen_ready:
+                st.caption("ℹ️ General corpus not ingested — grounding on compliance only.")
+        if c_mode == "article":
+            reading_level = st.selectbox(
+                "Reading level", ["Grade 6-8 (plain language)", "Grade 9-10", "Plain but detailed"]
+            )
         agentic = False
     else:
         engine = st.radio("Engine", ["Agentic (model drives retrieval)", "One-shot RAG"])
@@ -184,6 +277,39 @@ with st.sidebar:
     if st.button("Clear conversation"):
         st.session_state.history = []
 
+# ----- article writer: a form + tabbed result card (not a chat dump) -----
+if is_compliance and c_mode == "article":
+    src = "compliance + general corpora" if include_general else "compliance corpus only"
+    st.subheader("✍️ Patient-information article writer")
+    st.caption(f"Grounded & cited from the {src}. Every draft is for clinician review.")
+    with st.form("article_form"):
+        topic = st.text_input("Article topic", placeholder="e.g. what to expect after a knee replacement")
+        submitted = st.form_submit_button("Draft article")
+    if submitted and topic.strip():
+        refusal = phi.input_guard(topic)
+        if refusal:
+            st.warning(refusal)
+        elif not config.OPENAI_API_KEY:
+            st.warning("No OPENAI_API_KEY set — the article writer needs a chat model to "
+                       "research and draft the article.")
+        else:
+            status = st.status("Researching and drafting…", expanded=True)
+
+            def on_event(ev):
+                if ev["type"] == "tool_call":
+                    a = ", ".join(f"{key}={val!r}" for key, val in ev["args"].items())
+                    status.write(f"→ `{ev['name']}`({a})")
+                else:
+                    status.write(f"   ↳ {ev['result']}")
+
+            result = agent_mod.write_article(
+                topic.strip(), jurisdiction=jurisdiction, reading_level=reading_level,
+                include_general=include_general, max_steps=c_max_steps, on_event=on_event,
+            )
+            status.update(label=f"Done — {result['steps']} step(s)", state="complete")
+            render_article_result(result, topic.strip())
+    st.stop()
+
 # ----- conversation history -----
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -194,6 +320,10 @@ for turn in st.session_state.history:
     with st.chat_message("assistant"):
         st.markdown(turn["answer"])
         if turn.get("trace"):
+            labeled = collect_sources(turn["trace"])
+            if labeled and any(s.get("corpus") for s in labeled):
+                with st.expander(f"📚 Sources used ({len(labeled)})"):
+                    render_labeled_sources(labeled)
             render_trace(turn["trace"])
         if turn.get("sources"):
             render_sources(turn["sources"])
@@ -207,7 +337,7 @@ if q:
     with st.chat_message("user"):
         st.markdown(q)
     with st.chat_message("assistant"):
-        if is_compliance and c_agentic:
+        if is_compliance and c_mode == "agentic":
             status = st.status("Working over the compliance corpus…", expanded=True)
 
             def on_event(ev):
@@ -228,6 +358,39 @@ if q:
             st.session_state.history.append(
                 {"question": q, "answer": result["answer"], "trace": result["trace"]}
             )
+        elif is_compliance and c_mode == "general":
+            refusal = phi.input_guard(q)
+            if refusal:
+                st.warning(refusal)
+                st.session_state.history.append({"question": q, "answer": refusal})
+            else:
+                src = "compliance + general corpora" if include_general else "the compliance corpus"
+                status = st.status(f"Working over {src}…", expanded=True)
+
+                def on_event(ev):
+                    if ev["type"] == "tool_call":
+                        a = ", ".join(f"{key}={val!r}" for key, val in ev["args"].items())
+                        status.write(f"→ `{ev['name']}`({a})")
+                    else:
+                        status.write(f"   ↳ {ev['result']}")
+
+                q_general = q if not jurisdiction else (
+                    f"{q}\n\n(For any policy/compliance details, use the {jurisdiction} jurisdiction.)"
+                )
+                result = agent_mod.run_general(
+                    q_general, k=k, max_steps=c_max_steps, on_event=on_event,
+                    history=prior, include_general=include_general,
+                )
+                status.update(label=f"Done — {result['steps']} step(s)", state="complete")
+                st.markdown(result["answer"])
+                labeled = collect_sources(result["trace"])
+                if labeled:
+                    with st.expander(f"📚 Sources used ({len(labeled)})"):
+                        render_labeled_sources(labeled)
+                render_trace(result["trace"])
+                st.session_state.history.append(
+                    {"question": q, "answer": result["answer"], "trace": result["trace"]}
+                )
         elif is_compliance:
             chunks = []
             try:

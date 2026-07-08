@@ -26,3 +26,23 @@ def screen(text: str) -> dict[str, int]:
         if hits:
             out[name] = len(hits)
     return out
+
+
+def input_guard(text: str) -> str | None:
+    """Screen free-text USER INPUT (a question or article topic) before it is sent
+    anywhere. Returns a refusal message if obvious identifiers are found, else None.
+
+    This is a decision aid, not a guarantee -- it catches structured identifiers,
+    not free-text patient names. It exists because the patient-education modes take
+    open-ended input where a user might paste patient specifics ("write this for
+    patient X, DOB ..."), which must never reach the model on a no-BAA plan."""
+    hits = screen(text)
+    if not hits:
+        return None
+    kinds = ", ".join(sorted(hits))
+    return (
+        f"⚠️ Your input appears to contain possible personal identifiers ({kinds}). "
+        "This is a patient-education tool with no BAA in place — please don't enter "
+        "PHI/PII. Rephrase as a general question or topic (no names, dates of birth, "
+        "IDs, phone/email, or specific dates) and try again."
+    )

@@ -124,18 +124,100 @@ def _do_full_text(pmid):
 _IMPLS = {"search_literature": _do_search, "get_full_text": _do_full_text}
 
 
-def _toolset(corpus: str):
-    """(system_prompt, tools, impls, search_tool_name, id_key) for a corpus."""
+# --- Combined cross-corpus toolset (patient-education modes) ---------------
+# Grounds answers/articles in the compliance corpus plus, when toggled on AND
+# actually ingested, the optional general-knowledge corpus. Each search tool is
+# named for its corpus so the model (and its citations) can tell official policy
+# from general information. The strict single-corpus toolsets above are untouched.
+
+_SEARCH_COMPLIANCE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "search_compliance",
+        "description": (
+            "Search the internal compliance corpus (US / UK / Australia policies and "
+            "procedures). Results are OFFICIAL policy -- cite them as such with their "
+            "jurisdiction. LEAVE jurisdiction UNSET to search across ALL jurisdictions "
+            "(the default); only set it when the reader explicitly names a country. Do "
+            "NOT narrow to one jurisdiction on your own -- doing so hides relevant "
+            "guidance from the others."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "k": {"type": "integer", "description": "number of passages (default 6)"},
+                "jurisdiction": {"type": "string", "enum": ["US", "UK", "Australia"]},
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+_COMBINED_GET_DOC_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_document",
+        "description": (
+            "Fetch the full text of one document by its doc_id (from a search result) to "
+            "read or quote it precisely. Pass the corpus the doc_id came from."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string"},
+                "corpus": {"type": "string", "enum": ["compliance", "general"]},
+            },
+            "required": ["doc_id"],
+        },
+    },
+}
+
+
+def _combined_get_document(doc_id, corpus="compliance"):
+    from . import compliance, general
+
+    if corpus == "general":
+        return general.tool_get_document(doc_id)
+    return compliance.tool_get_document(doc_id)
+
+
+def _combined_toolset(include_general: bool, system_prompt: str | None):
+    from . import compliance, general
+
+    tools = [_SEARCH_COMPLIANCE_TOOL]
+    impls = {
+        "search_compliance": compliance.tool_search,
+        "get_document": _combined_get_document,
+    }
+    search_tools = {"search_compliance"}
+    # The general corpus is additive AND optional: only expose its tool when the
+    # toggle is on and it has actually been ingested, so the mode works
+    # compliance-only otherwise.
+    if include_general and general.is_ingested():
+        tools = tools + general.TOOLS
+        impls["search_general"] = general.tool_search
+        search_tools.add("search_general")
+    tools = tools + [_COMBINED_GET_DOC_TOOL]
+    prompt = system_prompt or config.GENERAL_SYSTEM_PROMPT
+    return prompt, tools, impls, search_tools, "search_compliance", "doc_id"
+
+
+def _toolset(corpus: str, include_general: bool = False, system_prompt: str | None = None):
+    """(system_prompt, tools, impls, search_tool_names:set, primary_search, id_key)."""
+    if corpus == "combined":
+        return _combined_toolset(include_general, system_prompt)
     if corpus == "compliance":
         from . import compliance
 
-        prompt = config.corpus_profile("compliance").get("system_prompt") or config.COMPLIANCE_SYSTEM_PROMPT
-        return prompt, compliance.TOOLS, compliance.IMPLS, "search_documents", "doc_id"
-    return AGENT_SYSTEM_PROMPT, TOOLS, _IMPLS, "search_literature", "pmid"
+        prompt = system_prompt or config.corpus_profile("compliance").get("system_prompt") or config.COMPLIANCE_SYSTEM_PROMPT
+        return prompt, compliance.TOOLS, compliance.IMPLS, {"search_documents"}, "search_documents", "doc_id"
+    return system_prompt or AGENT_SYSTEM_PROMPT, TOOLS, _IMPLS, {"search_literature"}, "search_literature", "pmid"
 
 
 def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None,
-              history=None, corpus: str = "pubmed") -> dict:
+              history=None, corpus: str = "pubmed", include_general: bool = False,
+              system_prompt: str | None = None) -> dict:
     """Drive the tool-calling loop until the model answers.
 
     Returns {"answer": str, "trace": [event...], "steps": int}. `on_event(event)`
@@ -153,9 +235,11 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None,
     from openai import OpenAI
 
     client = OpenAI()
-    system_prompt, tools, impls, search_tool, id_key = _toolset(corpus)
+    prompt, tools, impls, search_tools, primary_search, id_key = _toolset(
+        corpus, include_general=include_general, system_prompt=system_prompt
+    )
     messages = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": prompt},
         *history_messages(history),
         {"role": "user", "content": question},
     ]
@@ -171,7 +255,7 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None,
         # Force a search on the first turn so the model can't answer from its own
         # memory without consulting the corpus; let it choose freely after that.
         tool_choice = (
-            {"type": "function", "function": {"name": search_tool}}
+            {"type": "function", "function": {"name": primary_search}}
             if step == 0
             else "auto"
         )
@@ -205,7 +289,7 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None,
             # Diminishing-returns guard: when a search surfaces nothing the model
             # hasn't already seen, replace the (redundant) result with a nudge to
             # stop rephrasing and either read a hit or abstain.
-            if name == search_tool and isinstance(result, list):
+            if name in search_tools and isinstance(result, list):
                 fresh = [r for r in result if r.get(id_key) not in seen]
                 seen.update(r.get(id_key) for r in result)
                 if result and not fresh:
@@ -219,7 +303,12 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None,
                         ),
                         "seen": sorted(x for x in seen if x),
                     }
-            emit({"type": "tool_result", "name": name, "result": _summarize(name, result)})
+            # `raw` (search-hit lists only) lets a GUI build a real sources panel;
+            # `result` stays the compact human-readable summary for the trace view.
+            ev = {"type": "tool_result", "name": name, "result": _summarize(name, result)}
+            if isinstance(result, list):
+                ev["raw"] = result
+            emit(ev)
             messages.append(
                 {"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)}
             )
@@ -232,10 +321,10 @@ def run_agent(question: str, k: int = 6, max_steps: int = 6, on_event=None,
             "role": "system",
             "content": (
                 "You are out of tool calls. Answer now using ONLY the information the "
-                "tools have already returned above, with PMID citations and verbatim "
-                "quotes. If that information does not adequately answer the question, "
-                "say you could not find sufficient evidence in the corpus -- do NOT use "
-                "outside knowledge."
+                "tools have already returned above, citing each source (and its corpus / "
+                "jurisdiction). If that information does not adequately answer the "
+                "question, say you could not find sufficient evidence in the corpus -- do "
+                "NOT use outside knowledge."
             ),
         }
     )
@@ -260,3 +349,31 @@ def _summarize(name: str, result) -> str:
         src = result.get("source") or ("full text" if result.get("text") else "?")
         return f"{ident} -> {src} ({len(result.get('text', ''))} chars)"
     return str(result)[:200]
+
+
+def run_general(question: str, k: int = 6, max_steps: int = 6, on_event=None,
+                history=None, include_general: bool = False) -> dict:
+    """General patient-education assistant: grounded Q&A over the compliance corpus
+    plus (when toggled on and ingested) the general-knowledge corpus."""
+    return run_agent(
+        question, k=k, max_steps=max_steps, on_event=on_event, history=history,
+        corpus="combined", include_general=include_general,
+        system_prompt=config.GENERAL_SYSTEM_PROMPT,
+    )
+
+
+def write_article(topic: str, jurisdiction: str | None = None, reading_level: str | None = None,
+                  include_general: bool = False, max_steps: int = 8, on_event=None) -> dict:
+    """Draft a structured, grounded, cited patient-information article about `topic`,
+    drawing from the compliance corpus and (optionally) the general-knowledge corpus.
+    Returns the same {"answer", "trace", "steps"} shape as run_agent."""
+    parts = [f"Write a patient-information article about: {topic}"]
+    if jurisdiction:
+        parts.append(f"Where policy/compliance details apply, use the {jurisdiction} jurisdiction.")
+    if reading_level:
+        parts.append(f"Target reading level: {reading_level}.")
+    question = "\n".join(parts)
+    return run_agent(
+        question, max_steps=max_steps, on_event=on_event, corpus="combined",
+        include_general=include_general, system_prompt=config.ARTICLE_SYSTEM_PROMPT,
+    )

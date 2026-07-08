@@ -110,11 +110,16 @@ def assert_signature_matches() -> None:
 
 
 # --- Local-files corpus (a separate chunk table; the PubMed `articles` flow is
-#     untouched). One row per chunk; the table name comes from config so a corpus
-#     stays isolated and the signature guard applies per table. ---
+#     untouched). One row per chunk; the table name is passed in so several corpora
+#     (compliance, general, ...) can share this code, each isolated in its own table
+#     with the signature guard applied per table. Defaults to LOCAL_DOCS_TABLE. ---
 
-def init_local_docs() -> None:
-    table = config.LOCAL_DOCS_TABLE
+def _docs_table(table: str | None = None) -> str:
+    return table or config.LOCAL_DOCS_TABLE
+
+
+def init_local_docs(table: str | None = None) -> None:
+    table = _docs_table(table)
     statements = [
         "CREATE EXTENSION IF NOT EXISTS vector",
         f"""
@@ -142,10 +147,10 @@ def init_local_docs() -> None:
             conn.execute(stmt)
 
 
-def upsert_local_chunks(rows: list[tuple]) -> int:
+def upsert_local_chunks(rows: list[tuple], table: str | None = None) -> int:
     """rows: (chunk_id, doc_id, ordinal, title, category, source_path, text,
     metadata_json, embed_model, vec_literal)"""
-    table = config.LOCAL_DOCS_TABLE
+    table = _docs_table(table)
     sql = f"""
         INSERT INTO {table}
             (chunk_id, doc_id, ordinal, title, category, source_path, text, metadata, embed_model, embedding)
@@ -161,9 +166,9 @@ def upsert_local_chunks(rows: list[tuple]) -> int:
     return len(rows)
 
 
-def local_doc_hashes() -> dict[str, str]:
+def local_doc_hashes(table: str | None = None) -> dict[str, str]:
     """{doc_id: sha256} for already-stored docs -- lets `ingest` skip unchanged files."""
-    table = config.LOCAL_DOCS_TABLE
+    table = _docs_table(table)
     with connect() as conn:
         if conn.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is None:
             return {}
@@ -173,16 +178,16 @@ def local_doc_hashes() -> dict[str, str]:
     return {doc_id: h for doc_id, h in rows if h}
 
 
-def delete_local_doc(doc_id: str) -> None:
+def delete_local_doc(doc_id: str, table: str | None = None) -> None:
     with connect() as conn:
-        conn.execute(f"DELETE FROM {config.LOCAL_DOCS_TABLE} WHERE doc_id = %s", (doc_id,))
+        conn.execute(f"DELETE FROM {_docs_table(table)} WHERE doc_id = %s", (doc_id,))
 
 
-def local_doc_text(doc_id: str) -> str:
+def local_doc_text(doc_id: str, table: str | None = None) -> str:
     """Full text of one document = its chunks in order (for the agent's get_document)."""
     with connect() as conn:
         rows = conn.execute(
-            f"SELECT text FROM {config.LOCAL_DOCS_TABLE} WHERE doc_id = %s ORDER BY ordinal",
+            f"SELECT text FROM {_docs_table(table)} WHERE doc_id = %s ORDER BY ordinal",
             (doc_id,),
         ).fetchall()
     return "\n\n".join(r[0] for r in rows)

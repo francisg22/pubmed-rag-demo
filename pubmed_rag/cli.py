@@ -81,7 +81,9 @@ def cmd_ask(args) -> None:
 
 
 def cmd_agent(args) -> None:
-    corpus = args.corpus or config.CORPUS
+    from . import phi
+
+    engine = getattr(args, "engine", "agentic")
 
     def on_event(ev) -> None:
         if ev["type"] == "tool_call":
@@ -90,10 +92,39 @@ def cmd_agent(args) -> None:
         elif ev["type"] == "tool_result":
             print(f"     {ev['result']}")
 
-    print(f"Agent working on the '{corpus}' corpus (tool calls shown live):\n")
-    result = agent_mod.run_agent(
-        args.question, k=args.k, max_steps=args.max_steps, on_event=on_event, corpus=corpus
-    )
+    # Patient-education modes take open-ended input -> screen it for PHI/PII first.
+    if engine in ("general", "article"):
+        refusal = phi.input_guard(args.question)
+        if refusal:
+            print(refusal)
+            return
+
+    include_general = getattr(args, "include_general", False)
+    jurisdiction = getattr(args, "jurisdiction", None)
+
+    if engine == "article":
+        src = "compliance + general corpora" if include_general else "compliance corpus"
+        print(f"Drafting a patient-information article (grounded in the {src}):\n")
+        result = agent_mod.write_article(
+            args.question, jurisdiction=jurisdiction, include_general=include_general,
+            max_steps=args.max_steps, on_event=on_event,
+        )
+    elif engine == "general":
+        src = "compliance + general corpora" if include_general else "compliance corpus"
+        print(f"General assistant (grounded in the {src}):\n")
+        question = args.question
+        if jurisdiction:
+            question += f"\n\n(For any policy/compliance details, use the {jurisdiction} jurisdiction.)"
+        result = agent_mod.run_general(
+            question, k=args.k, max_steps=args.max_steps, on_event=on_event,
+            include_general=include_general,
+        )
+    else:
+        corpus = args.corpus or config.CORPUS
+        print(f"Agent working on the '{corpus}' corpus (tool calls shown live):\n")
+        result = agent_mod.run_agent(
+            args.question, k=args.k, max_steps=args.max_steps, on_event=on_event, corpus=corpus
+        )
     print(f"\n--- answer ({result['steps']} step(s)) ---\n")
     print(result["answer"])
 
@@ -107,14 +138,18 @@ def cmd_ingest(args) -> None:
     from . import phi
     from .sources import localfiles
 
-    root = args.path or config.LOCAL_DOCS_DIR
+    corpus = getattr(args, "corpus", None) or "compliance"
+    prof = config.corpus_profile(corpus)
+    table = prof["table"]
+    root = args.path or prof.get("dir") or config.LOCAL_DOCS_DIR
     enabled = config.ALLOW_EMBEDDING and not args.dry_run
+    print(f"Corpus: {corpus}  (table '{table}')")
     print(f"Source: {root}")
     if enabled:
         print("Embedding gate: ON  -- will embed via OpenAI and store in pgvector.")
-        db.init_local_docs()
+        db.init_local_docs(table)
         sig = config.embedding_signature()
-        existing = db.local_doc_hashes()  # incremental: skip files whose content is unchanged
+        existing = db.local_doc_hashes(table)  # incremental: skip files whose content is unchanged
     else:
         why = "--dry-run" if args.dry_run else "ALLOW_EMBEDDING not set"
         print(f"Embedding gate: OFF ({why}) -- analysis only. NO OpenAI calls, nothing stored.")
@@ -165,7 +200,7 @@ def cmd_ingest(args) -> None:
         if enabled:
             doc.metadata["sha256"] = sha
             if rel in existing:               # changed file -> drop old chunks before re-embedding
-                db.delete_local_doc(rel)
+                db.delete_local_doc(rel, table)
             vectors = embed.embed_texts([c.text for c in chunks])
             rows = [
                 (
@@ -175,12 +210,13 @@ def cmd_ingest(args) -> None:
                 )
                 for c, v in zip(chunks, vectors)
             ]
-            db.upsert_local_chunks(rows)
+            db.upsert_local_chunks(rows, table)
         progress(i)
     if total:
         sys.stdout.write("\n")
 
-    print("\nBy jurisdiction (docs / chunks / tokens):")
+    facet = "jurisdiction" if corpus == "compliance" else "category (top-level folder)"
+    print(f"\nBy {facet} (docs / chunks / tokens):")
     for juris in sorted(by_juris):
         d, c, t = by_juris[juris]
         print(f"  {juris:12} {d:5} docs  {c:7} chunks  {t:>12,} tokens")
@@ -199,7 +235,7 @@ def cmd_ingest(args) -> None:
         print("PHI screen: no obvious structured identifiers found "
               "(not a guarantee -- does not catch free-text names).")
     if enabled:
-        print(f"\nStored {n_chunks} chunks in '{config.LOCAL_DOCS_TABLE}'.")
+        print(f"\nStored {n_chunks} chunks in '{table}'.")
     else:
         print("\nGate OFF: nothing was embedded, sent to OpenAI, or stored. "
               "Set ALLOW_EMBEDDING=1 (after review) to embed + store.")
@@ -247,9 +283,21 @@ def cmd_stats(args) -> None:
             "SELECT embed_model, count(*), min(pub_year), max(pub_year) "
             "FROM articles GROUP BY embed_model"
         ).fetchall()
-    print(f"{total} articles")
-    for model, n, y0, y1 in by_model:
-        print(f"  {n:6} embedded with {model} (years {y0}-{y1})")
+        print(f"pubmed: {total} articles")
+        for model, n, y0, y1 in by_model:
+            print(f"  {n:6} embedded with {model} (years {y0}-{y1})")
+
+        # Local-files corpora (compliance, general): one chunk table each.
+        for corpus in ("compliance", "general"):
+            table = config.corpus_profile(corpus)["table"]
+            if conn.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is None:
+                print(f"{corpus}: not ingested (table '{table}' absent)")
+                continue
+            n_chunks = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            n_docs = conn.execute(f"SELECT count(DISTINCT doc_id) FROM {table}").fetchone()[0]
+            models = [r[0] for r in conn.execute(f"SELECT DISTINCT embed_model FROM {table}")]
+            print(f"{corpus}: {n_docs} docs -> {n_chunks} chunks "
+                  f"[{', '.join(models) or 'no rows'}]")
 
 
 def main() -> None:
@@ -293,17 +341,38 @@ def main() -> None:
     ap.set_defaults(fn=cmd_ask)
 
     gp = sub.add_parser("agent", help="agentic Q&A -- the model drives retrieval via tools")
-    gp.add_argument("question")
+    gp.add_argument("question", help="a question, or (with --engine article) an article topic")
     gp.add_argument("--k", type=int, default=6, help="results per search (default 6)")
     gp.add_argument("--max-steps", type=int, default=6, help="max tool-calling rounds (default 6)")
     gp.add_argument("--corpus", choices=["pubmed", "compliance"], help="default: $CORPUS or pubmed")
+    gp.add_argument(
+        "--engine",
+        choices=["agentic", "general", "article"],
+        default="agentic",
+        help="agentic: single-corpus tool loop (default). general: grounded patient-education "
+             "Q&A over compliance (+general). article: draft a patient-information article.",
+    )
+    gp.add_argument(
+        "--include-general",
+        action="store_true",
+        help="general/article engines: also ground in the optional general-knowledge corpus "
+             "(only takes effect once it's ingested)",
+    )
+    gp.add_argument("--jurisdiction", choices=["US", "UK", "Australia"],
+                    help="general/article engines: prefer this jurisdiction for policy details")
     gp.set_defaults(fn=cmd_agent)
 
     ip = sub.add_parser(
         "ingest",
         help="local files -> extract, chunk, PHI-screen (embeds ONLY if ALLOW_EMBEDDING=1)",
     )
-    ip.add_argument("--path", help=f"corpus directory (default {config.LOCAL_DOCS_DIR})")
+    ip.add_argument(
+        "--corpus",
+        choices=["compliance", "general"],
+        default="compliance",
+        help="which local-files corpus to ingest into (default compliance)",
+    )
+    ip.add_argument("--path", help="corpus directory (default: the corpus's configured dir)")
     ip.add_argument(
         "--dry-run",
         action="store_true",
