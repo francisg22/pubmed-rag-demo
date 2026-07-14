@@ -3,7 +3,20 @@ __pycache__/
 *.pyc
 .env
 
+# Editor / OS junk
+*.swp
+*.swo
+*~
+.DS_Store
+
 # Local-files corpus drop dir -- may contain sensitive/PHI files; never commit its contents
 data/local_docs/*
 !data/local_docs/.gitkeep
 !data/local_docs/README.md
+
+# General-knowledge corpus drop dir -- curated general info; keep the README +
+# example templates, never commit the curated content itself.
+data/general_docs/*
+!data/general_docs/.gitkeep
+!data/general_docs/README.md
+!data/general_docs/example-*.md
