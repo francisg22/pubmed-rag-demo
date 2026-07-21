@@ -15,12 +15,14 @@ isn't wired show an ingestion-only notice rather than answering from the wrong d
 
 Run with:  streamlit run app.py     (CORPUS=local_docs streamlit run app.py to start on that corpus)
 """
+import uuid
+
 import streamlit as st
 
 from pubmed_rag import agent as agent_mod
 from pubmed_rag import ask as ask_mod
 from pubmed_rag import compliance as compliance_mod
-from pubmed_rag import config, db, fetch, phi
+from pubmed_rag import config, db, fetch, followups, phi
 from pubmed_rag.search import search
 
 # Browser-tab title/icon are fixed at launch from the CORPUS flag; the in-page
@@ -172,6 +174,79 @@ def one_shot_answer(q, k, mode, abstract_only, history=None):
     return answer, sources
 
 
+# ----- interaction logging + follow-up suggestions -----
+def trace_hits(trace):
+    """Flatten every raw search-hit dict out of an agent trace."""
+    out = []
+    for ev in trace or []:
+        if ev.get("type") == "tool_result" and isinstance(ev.get("raw"), list):
+            out += [r for r in ev["raw"] if isinstance(r, dict)]
+    return out
+
+
+def _question_embedding(question, flagged):
+    """Embed the question for 'people also asked' similarity — only when it's PHI-clean
+    and a real (OpenAI) embedding provider is configured (keeps the log single-space)."""
+    if flagged or not config.OPENAI_API_KEY:
+        return None
+    try:
+        from pubmed_rag import embed
+        return embed.embed_texts([question])[0]
+    except Exception:
+        return None
+
+
+def log_and_suggest(question, answer, corpus, mode, jurisdiction, source_ids, n_sources,
+                    steps, context):
+    """PHI-screen + log the interaction and generate follow-up suggestions. Returns
+    (interaction_id, suggestions). Never raises — logging must not break answers."""
+    flagged = bool(phi.screen(question))
+    qvec = _question_embedding(question, flagged)
+    prior = db.related_questions(qvec, corpus) if qvec is not None else []
+    suggestions = followups.generate_followups(
+        answer, context=context, corpus=corpus, mode=mode, prior_questions=prior
+    )
+    iid = None
+    if config.LOG_INTERACTIONS:
+        try:
+            iid = db.log_interaction(
+                session_id=st.session_state.get("sid"), corpus=corpus, mode=mode,
+                jurisdiction=jurisdiction, question=question, question_flagged=flagged,
+                answer=answer, answered=n_sources > 0, source_ids=source_ids,
+                n_sources=n_sources, steps=steps, suggestions=suggestions, q_embedding=qvec,
+            )
+        except Exception:
+            iid = None
+    return iid, suggestions
+
+
+def render_turn_extras(turn, is_latest):
+    """👍/👎 feedback (any turn) + follow-up buttons (latest turn only). Keyed by a
+    stable per-turn id so widget state survives Streamlit reruns."""
+    tid = turn.get("tid")
+    if not tid:
+        return
+    iid = turn.get("interaction_id")
+    if iid:
+        val = st.feedback("thumbs", key=f"fb_{tid}")
+        if val is not None:
+            fb = 1 if val == 1 else -1
+            if st.session_state.get(f"fbval_{tid}") != fb:  # write once per change
+                try:
+                    db.set_feedback(iid, fb)
+                except Exception:
+                    pass
+                st.session_state[f"fbval_{tid}"] = fb
+    sugg = turn.get("suggestions") or []
+    if is_latest and sugg:
+        st.caption("Ask a follow-up:")
+        for i, (col, s) in enumerate(zip(st.columns(len(sugg)), sugg)):
+            if col.button(s, key=f"fu_{tid}_{i}"):
+                st.session_state.pending_q = s
+                st.session_state.pending_click = (iid, s)
+                st.rerun()
+
+
 # ----- sidebar (part 1): corpus selection + status (shown for every corpus) -----
 with st.sidebar:
     st.header("Settings")
@@ -310,11 +385,16 @@ if is_compliance and c_mode == "article":
             render_article_result(result, topic.strip())
     st.stop()
 
-# ----- conversation history -----
+# ----- conversation history + input -----
 if "history" not in st.session_state:
     st.session_state.history = []
+st.session_state.setdefault("sid", uuid.uuid4().hex)
 
-for turn in st.session_state.history:
+# Read the input up front: the chat box OR a follow-up suggestion the user clicked
+# (st.chat_input still pins itself to the bottom of the page regardless of call order).
+q = st.chat_input(prof["placeholder"]) or st.session_state.pop("pending_q", None)
+
+for i, turn in enumerate(st.session_state.history):
     with st.chat_message("user"):
         st.markdown(turn["question"])
     with st.chat_message("assistant"):
@@ -327,17 +407,32 @@ for turn in st.session_state.history:
             render_trace(turn["trace"])
         if turn.get("sources"):
             render_sources(turn["sources"])
+        # feedback on any turn; follow-ups only on the last one, and not while a new
+        # question is being processed (that new turn renders its own below).
+        render_turn_extras(
+            turn, is_latest=(i == len(st.session_state.history) - 1 and not q)
+        )
 
-# ----- input -----
-q = st.chat_input(prof["placeholder"])
 if q:
-    # Prior turns become conversation memory (dialogue text only). session_state
-    # holds only earlier turns at this point — the current one is appended after.
+    # A clicked follow-up records a click-through on the interaction that suggested it.
+    click = st.session_state.pop("pending_click", None)
+    if click and click[0]:
+        try:
+            db.set_clicked_suggestion(click[0], click[1])
+        except Exception:
+            pass
+
+    # Prior turns become conversation memory (dialogue text only).
     prior = [(t["question"], t["answer"]) for t in st.session_state.history]
     with st.chat_message("user"):
         st.markdown(q)
     with st.chat_message("assistant"):
+        turn = {"question": q, "tid": uuid.uuid4().hex}
+        answer = None                       # None => already handled (e.g. PHI refusal)
+        src_ids, n_src, steps, ctx, turn_mode = [], 0, 0, "", "oneshot"
+
         if is_compliance and c_mode == "agentic":
+            turn_mode = "compliance-agentic"
             status = st.status("Working over the compliance corpus…", expanded=True)
 
             def on_event(ev):
@@ -355,14 +450,22 @@ if q:
             status.update(label=f"Done — {result['steps']} step(s)", state="complete")
             st.markdown(result["answer"])
             render_trace(result["trace"])
-            st.session_state.history.append(
-                {"question": q, "answer": result["answer"], "trace": result["trace"]}
-            )
+            answer, steps = result["answer"], result["steps"]
+            turn["trace"] = result["trace"]
+            hits = trace_hits(result["trace"])
+            src_ids = list(dict.fromkeys(h.get("doc_id") for h in hits if h.get("doc_id")))
+            n_src = len(src_ids)
+            ctx = "\n".join((h.get("snippet") or "") for h in hits[:6])
+
         elif is_compliance and c_mode == "general":
+            turn_mode = "general"
             refusal = phi.input_guard(q)
             if refusal:
                 st.warning(refusal)
-                st.session_state.history.append({"question": q, "answer": refusal})
+                # PHI in the question -> don't log its text or generate suggestions.
+                st.session_state.history.append(
+                    {"question": q, "answer": refusal, "tid": turn["tid"]}
+                )
             else:
                 src = "compliance + general corpora" if include_general else "the compliance corpus"
                 status = st.status(f"Working over {src}…", expanded=True)
@@ -388,10 +491,15 @@ if q:
                     with st.expander(f"📚 Sources used ({len(labeled)})"):
                         render_labeled_sources(labeled)
                 render_trace(result["trace"])
-                st.session_state.history.append(
-                    {"question": q, "answer": result["answer"], "trace": result["trace"]}
-                )
+                answer, steps = result["answer"], result["steps"]
+                turn["trace"] = result["trace"]
+                hits = trace_hits(result["trace"])
+                src_ids = list(dict.fromkeys(h.get("doc_id") for h in hits if h.get("doc_id")))
+                n_src = len(src_ids)
+                ctx = "\n".join((h.get("snippet") or "") for h in hits[:6])
+
         elif is_compliance:
+            turn_mode = "compliance-oneshot"
             chunks = []
             try:
                 with st.spinner("Searching compliance documents…"):
@@ -427,8 +535,12 @@ if q:
             st.markdown(answer)
             if chunks:
                 render_compliance_sources(chunks)
-            st.session_state.history.append({"question": q, "answer": answer})
+            src_ids = [c.doc_id for c in chunks]
+            n_src = len(chunks)
+            ctx = compliance_mod.build_context(chunks)[:2500] if chunks else ""
+
         elif agentic:
+            turn_mode = "pubmed-agentic"
             status = st.status("Searching the literature…", expanded=True)
 
             def on_event(ev):
@@ -444,14 +556,31 @@ if q:
             status.update(label=f"Done — {result['steps']} step(s)", state="complete")
             st.markdown(result["answer"])
             render_trace(result["trace"])
-            st.session_state.history.append(
-                {"question": q, "answer": result["answer"], "trace": result["trace"]}
-            )
+            answer, steps = result["answer"], result["steps"]
+            turn["trace"] = result["trace"]
+            hits = trace_hits(result["trace"])
+            src_ids = list(dict.fromkeys(str(h.get("pmid")) for h in hits if h.get("pmid")))
+            n_src = len(src_ids)
+            ctx = "\n".join((h.get("snippet") or "") for h in hits[:6])
+
         else:
+            turn_mode = "pubmed-oneshot"
             with st.spinner("Retrieving and answering…"):
                 answer, sources = one_shot_answer(q, k, mode, abstract_only, history=prior)
             st.markdown(answer)
             render_sources(sources)
-            st.session_state.history.append(
-                {"question": q, "answer": answer, "sources": sources}
+            turn["sources"] = sources
+            src_ids = [s["pmid"] for s in sources]
+            n_src = len(sources)
+            ctx = "\n".join((s.get("snippet") or "") for s in sources[:6])
+
+        # ----- common finalize: log the interaction + offer follow-up suggestions -----
+        if answer is not None:
+            iid, suggestions = log_and_suggest(
+                q, answer, corpus_key, turn_mode, jurisdiction, src_ids, n_src, steps, ctx
             )
+            turn["answer"] = answer
+            turn["interaction_id"] = iid
+            turn["suggestions"] = suggestions
+            st.session_state.history.append(turn)
+            render_turn_extras(turn, is_latest=True)

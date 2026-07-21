@@ -15,5 +15,23 @@ services:
       timeout: 2s
       retries: 30
 
+  # LOCAL DEV ONLY. Builds the production image and points it at the compose
+  # Postgres. In Azure this role is played by App Service (image from ACR) +
+  # Flexible Server; nothing here is used in the cloud deploy.
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # `db` is the compose service name; 5432 is its in-network port (the 5433
+      # host mapping above is only for tools on the host).
+      DATABASE_URL: postgresql://rag:rag@db:5432/pubmed_rag
+      # Passed through from your shell if set; the app degrades gracefully (shows
+      # the assembled prompt) when it's absent. Never hard-code a key here.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "8501:8501"
+
 volumes:
   pgdata:

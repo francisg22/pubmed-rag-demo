@@ -1,0 +1,36 @@
+# Keep the build context small and — critically — keep sensitive / large content
+# OUT of the image. The running GUI reads from Postgres and the model API, never
+# from these paths.
+
+# Version control
+.git
+.gitignore
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Python caches & virtualenv
+.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Corpus data & drop dirs: internal compliance docs, the 29MB MedlinePlus XML,
+# and generated .md files. NEVER bake these into an image that gets pushed to a
+# registry. Data reaches the app via Postgres, not the filesystem.
+data/
+
+# Editor / OS junk
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dev-only / not needed at runtime
+.claude/
+DEMO.md
+example_output.txt
+requirements-files.txt

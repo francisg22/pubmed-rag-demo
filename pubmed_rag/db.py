@@ -5,6 +5,9 @@ Every row records which embedding model produced its vector, and search
 refuses to run against a corpus whose signature doesn't match the current
 configuration -- the single most common RAG implementation mistake.
 """
+import json
+import uuid
+
 import psycopg
 
 from . import config
@@ -191,3 +194,126 @@ def local_doc_text(doc_id: str, table: str | None = None) -> str:
             (doc_id,),
         ).fetchall()
     return "\n\n".join(r[0] for r in rows)
+
+
+# --- Interaction log (usage-driven follow-ups + analytics). One row per answered
+#     turn. Partly vector-backed: `q_embedding` powers "people also asked" via
+#     similarity over past questions. We store QUESTIONS, never re-serve past
+#     answers as fact. Self-provisions (CREATE ... IF NOT EXISTS) on first write, so
+#     it needs no migration step on the deployed DB. ---
+
+def _interactions_table(table: str | None = None) -> str:
+    return table or config.INTERACTIONS_TABLE
+
+
+def init_interactions(table: str | None = None) -> None:
+    table = _interactions_table(table)
+    statements = [
+        "CREATE EXTENSION IF NOT EXISTS vector",
+        f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            id                 text PRIMARY KEY,
+            created_at         timestamptz NOT NULL DEFAULT now(),
+            session_id         text,
+            corpus             text,
+            mode               text,
+            jurisdiction       text,
+            question           text,            -- NULL when PHI-flagged
+            question_flagged   boolean NOT NULL DEFAULT false,
+            answer             text,            -- for analytics only; never re-served as fact
+            answered           boolean NOT NULL DEFAULT false,
+            source_ids         jsonb,
+            n_sources          int NOT NULL DEFAULT 0,
+            steps              int NOT NULL DEFAULT 0,
+            feedback           smallint,        -- NULL / 1 (up) / -1 (down)
+            feedback_note      text,
+            suggestions        jsonb,
+            clicked_suggestion text,
+            q_embedding        vector({config.EMBED_DIM})
+        )
+        """,
+        f"CREATE INDEX IF NOT EXISTS {table}_created_idx ON {table} (created_at DESC)",
+        f"CREATE INDEX IF NOT EXISTS {table}_corpus_idx ON {table} (corpus)",
+        f"CREATE INDEX IF NOT EXISTS {table}_qembed_idx ON {table} "
+        f"USING hnsw (q_embedding vector_cosine_ops)",
+    ]
+    with connect() as conn:
+        for stmt in statements:
+            conn.execute(stmt)
+
+
+def log_interaction(*, session_id=None, corpus=None, mode=None, jurisdiction=None,
+                    question=None, question_flagged=False, answer=None, answered=False,
+                    source_ids=None, n_sources=0, steps=0, suggestions=None,
+                    q_embedding=None, table: str | None = None) -> str:
+    """Insert one interaction row; return its id. Self-provisions the table. Callers
+    should still wrap in try/except so logging never breaks the answer path."""
+    table = _interactions_table(table)
+    init_interactions(table)
+    iid = uuid.uuid4().hex
+    vec = vec_literal(q_embedding) if q_embedding else None  # None -> NULL::vector
+    sql = f"""
+        INSERT INTO {table}
+            (id, session_id, corpus, mode, jurisdiction, question, question_flagged,
+             answer, answered, source_ids, n_sources, steps, suggestions, q_embedding)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s::jsonb, %s::vector)
+    """
+    params = (
+        iid, session_id, corpus, mode, jurisdiction,
+        (None if question_flagged else question), question_flagged,
+        answer, answered, json.dumps(source_ids or []), n_sources, steps,
+        json.dumps(suggestions or []), vec,
+    )
+    with connect() as conn:
+        conn.execute(sql, params)
+    return iid
+
+
+def set_feedback(interaction_id: str, value: int, note: str | None = None,
+                 table: str | None = None) -> None:
+    table = _interactions_table(table)
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE {table} SET feedback = %s, "
+            f"feedback_note = COALESCE(%s, feedback_note) WHERE id = %s",
+            (value, note, interaction_id),
+        )
+
+
+def set_clicked_suggestion(interaction_id: str, text: str, table: str | None = None) -> None:
+    table = _interactions_table(table)
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE {table} SET clicked_suggestion = %s WHERE id = %s",
+            (text, interaction_id),
+        )
+
+
+def related_questions(query_embedding, corpus: str, k: int = 5,
+                      table: str | None = None) -> list[str]:
+    """Past questions most similar to the current one, for "people also asked".
+    Only *answerable*, PHI-clean, non-thumbs-down questions in the same corpus.
+    Best-effort: returns [] if the table/embedding is unavailable; never raises."""
+    if query_embedding is None:
+        return []
+    table = _interactions_table(table)
+    try:
+        with connect() as conn:
+            if conn.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is None:
+                return []
+            rows = conn.execute(
+                f"""
+                SELECT question
+                FROM {table}
+                WHERE corpus = %s AND answered AND NOT question_flagged
+                      AND question IS NOT NULL
+                      AND feedback IS DISTINCT FROM -1
+                      AND q_embedding IS NOT NULL
+                ORDER BY q_embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (corpus, vec_literal(query_embedding), k),
+            ).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []

@@ -54,6 +54,14 @@ LOCAL_DOCS_TABLE = os.environ.get("LOCAL_DOCS_TABLE", "local_docs")
 GENERAL_DOCS_DIR = os.environ.get("GENERAL_DOCS_DIR", "data/general_docs")
 GENERAL_DOCS_TABLE = os.environ.get("GENERAL_DOCS_TABLE", "general_docs")
 
+# --- Interaction log (usage-driven follow-ups + analytics) ---
+# Every answered turn is logged to this table so we can see what people ask and
+# surface real past questions as follow-up suggestions ("people also asked"). It
+# stores QUESTIONS (never re-serving past answers as fact). Set LOG_INTERACTIONS=0
+# to disable all logging (a kill switch for the deployed app).
+INTERACTIONS_TABLE = os.environ.get("INTERACTIONS_TABLE", "interactions")
+LOG_INTERACTIONS = os.environ.get("LOG_INTERACTIONS", "1").lower() not in ("0", "false", "no")
+
 # HARD SAFETY GATE. While this is off, `ingest` only extracts, chunks, and
 # screens locally -- it makes NO embedding calls and sends NOTHING to OpenAI,
 # and writes nothing to the database. Turn it on (ALLOW_EMBEDDING=1) only after

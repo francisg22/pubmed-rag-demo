@@ -300,6 +300,39 @@ def cmd_stats(args) -> None:
                   f"[{', '.join(models) or 'no rows'}]")
 
 
+def cmd_interactions(args) -> None:
+    """Read-only analytics over the logged Q&A interactions (no content is sent
+    anywhere). PHI-flagged questions were stored with their text withheld."""
+    table = config.INTERACTIONS_TABLE
+    with db.connect() as conn:
+        if conn.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is None:
+            print(f"No interactions yet (table '{table}' absent).")
+            return
+        total = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        flagged = conn.execute(f"SELECT count(*) FROM {table} WHERE question_flagged").fetchone()[0]
+        up = conn.execute(f"SELECT count(*) FROM {table} WHERE feedback = 1").fetchone()[0]
+        down = conn.execute(f"SELECT count(*) FROM {table} WHERE feedback = -1").fetchone()[0]
+        clicks = conn.execute(
+            f"SELECT count(*) FROM {table} WHERE clicked_suggestion IS NOT NULL"
+        ).fetchone()[0]
+        print(f"interactions: {total} total ({flagged} PHI-flagged, text withheld)")
+        print(f"  feedback: up {up} / down {down}    follow-up clicks: {clicks}")
+        print("  by corpus / mode:")
+        for corpus, mode, n in conn.execute(
+            f"SELECT corpus, mode, count(*) FROM {table} "
+            f"GROUP BY corpus, mode ORDER BY count(*) DESC"
+        ).fetchall():
+            print(f"    {corpus or '?':12} {mode or '?':20} {n}")
+        print(f"  recent questions (last {args.limit}):")
+        for q, fb, nsrc in conn.execute(
+            f"SELECT question, feedback, n_sources FROM {table} "
+            f"WHERE question IS NOT NULL ORDER BY created_at DESC LIMIT %s",
+            (args.limit,),
+        ).fetchall():
+            mark = {1: "up  ", -1: "down"}.get(fb, "    ")
+            print(f"    {mark} [{nsrc} src] {(q or '')[:80]}")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(
         prog="pubmed_rag",
@@ -388,6 +421,10 @@ def main() -> None:
     vp.set_defaults(fn=cmd_inventory)
 
     sub.add_parser("stats", help="corpus summary").set_defaults(fn=cmd_stats)
+
+    xp = sub.add_parser("interactions", help="analytics on logged Q&A interactions")
+    xp.add_argument("--limit", type=int, default=15, help="recent questions to show")
+    xp.set_defaults(fn=cmd_interactions)
 
     args = p.parse_args()
     args.fn(args)
